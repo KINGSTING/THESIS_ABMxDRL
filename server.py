@@ -1,6 +1,8 @@
 import mesa
 from mesa.visualization.modules import CanvasGrid, ChartModule, TextElement
 from mesa.visualization.ModularVisualization import ModularServer
+# 1. IMPORT CHOICE FOR THE DROPDOWN MENU
+from mesa.visualization.UserParam import Choice
 
 # Import your custom agents and model
 from agents.bacolod_model import BacolodModel
@@ -20,7 +22,6 @@ def make_barangay_portrayal(barangay_target_id):
         portrayal = {}
         agent_class = type(agent).__name__
         
-        # HOUSEHOLDS: Green (Compliant) vs Red (Non-Compliant)
         if agent_class == "HouseholdAgent":
             portrayal["Shape"] = "circle"
             portrayal["Filled"] = "true"
@@ -29,7 +30,6 @@ def make_barangay_portrayal(barangay_target_id):
             is_compliant = getattr(agent, "is_compliant", False)
             portrayal["Color"] = "green" if is_compliant else "red"
             
-        # ENFORCEMENT: Blue Squares
         elif agent_class == "EnforcementAgent":
             portrayal["Shape"] = "rect"
             portrayal["Filled"] = "true"
@@ -38,7 +38,6 @@ def make_barangay_portrayal(barangay_target_id):
             portrayal["Layer"] = 1
             portrayal["Color"] = "blue"
             
-        # BARANGAY CENTER: Black Dot
         elif agent_class == "BarangayAgent":
             portrayal["Shape"] = "circle"
             portrayal["Filled"] = "true"
@@ -49,25 +48,29 @@ def make_barangay_portrayal(barangay_target_id):
         return portrayal
     return local_portrayal
 
-# --- 2. Helper Classes (UI Layout) ---
+# --- 2. UI Layout Classes ---
 
 class Spacer(mesa.visualization.TextElement):
     def render(self, model):
-        return '<div style="height: 650px; width: 100%; display: block; z-index: -1;"></div>'
+        # Keeps charts pushed down below the map
+        return '<div style="height: 850px; width: 100%; display: block; z-index: -1;"></div>'
 
 class ViewSwitcher(mesa.visualization.TextElement):
     def render(self, model):
+        # This HTML block includes the "Image Hack" (onerror) to force the JS to run
         return """
-        <div class="switcher-box">
-            <h4>Active Simulation View</h4>
-            <div class="btn-group" id="bgy-btn-group">
-                <button id="btn_0" class="bgy-btn" onclick="window.switchView(0)">Poblacion</button>
-                <button id="btn_1" class="bgy-btn" onclick="window.switchView(1)">Liangan East</button>
-                <button id="btn_2" class="bgy-btn" onclick="window.switchView(2)">Ezperanza</button>
-                <button id="btn_3" class="bgy-btn" onclick="window.switchView(3)">Binuni</button>
-                <button id="btn_4" class="bgy-btn" onclick="window.switchView(4)">Demologan</button> 
-                <button id="btn_5" class="bgy-btn" onclick="window.switchView(5)">Mati</button>
-                <button id="btn_6" class="bgy-btn" onclick="window.switchView(6)">Babalaya</button>
+        <div class="switcher-container">
+            <div class="switcher-box">
+                <h4>Active Simulation View</h4>
+                <div class="btn-group" id="bgy-btn-group">
+                    <button id="btn_0" class="bgy-btn active" onclick="window.switchView(0)">Poblacion</button>
+                    <button id="btn_1" class="bgy-btn" onclick="window.switchView(1)">Liangan East</button>
+                    <button id="btn_2" class="bgy-btn" onclick="window.switchView(2)">Ezperanza</button>
+                    <button id="btn_3" class="bgy-btn" onclick="window.switchView(3)">Binuni</button>
+                    <button id="btn_4" class="bgy-btn" onclick="window.switchView(4)">Demologan</button> 
+                    <button id="btn_5" class="bgy-btn" onclick="window.switchView(5)">Mati</button>
+                    <button id="btn_6" class="bgy-btn" onclick="window.switchView(6)">Babalaya</button>
+                </div>
             </div>
             
             <img src="x" style="display:none;" onerror="
@@ -75,22 +78,22 @@ class ViewSwitcher(mesa.visualization.TextElement):
                     window.switchView = function(targetIndex) {
                         // 1. Handle Maps
                         let maps = document.getElementsByClassName('world-grid-parent');
-                        if (maps.length < 7) {
-                            setTimeout(() => window.switchView(targetIndex), 100);
-                            return;
+                        if (maps.length < 7) { 
+                            setTimeout(() => window.switchView(targetIndex), 100); 
+                            return; 
                         }
                         
                         targetIndex = parseInt(targetIndex);
                         for (let i = 0; i < 7; i++) {
                             let mapBox = maps[i];
                             if (i === targetIndex) {
-                                mapBox.style.opacity = '1';
-                                mapBox.style.zIndex = '100';
+                                mapBox.style.opacity = '1'; 
+                                mapBox.style.zIndex = '100'; 
                                 mapBox.style.pointerEvents = 'auto';
                                 mapBox.style.border = '2px solid #007bff';
                             } else {
-                                mapBox.style.opacity = '0';
-                                mapBox.style.zIndex = '1';
+                                mapBox.style.opacity = '0'; 
+                                mapBox.style.zIndex = '1'; 
                                 mapBox.style.pointerEvents = 'none';
                                 mapBox.style.border = 'none';
                             }
@@ -110,43 +113,48 @@ class ViewSwitcher(mesa.visualization.TextElement):
                         }
                     };
                     
-                    if (!window.hasInitializedView) {
-                        window.hasInitializedView = true;
-                        setTimeout(() => window.switchView(0), 500);
-                    }
+                    // Initialize view after short delay
+                    setTimeout(() => window.switchView(0), 500);
                 }
             ">
+
+            <style>
+                /* CENTERED MAP STYLE */
+                .world-grid-parent {
+                    position: absolute !important;
+                    top: 360px; 
+                    left: 60% !important;           /* Center horizontally */
+                    transform: translateX(-50%) !important; /* Perfect center alignment */
+                    margin: 0 !important;
+                    width: 600px !important; 
+                    height: 600px !important;
+                    transition: opacity 0.3s ease;
+                    background: white;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    border-radius: 4px;
+                }
+
+                .switcher-container {
+                    width: 100%; text-align: center; padding: 15px; 
+                    background: white; z-index: 9999 !important; position: relative;
+                    display: flex; justify-content: center;
+                }
+                .switcher-box {
+                    padding: 15px; background: #f8f9fa; border-radius: 8px;
+                    border: 1px solid #dee2e6;
+                }
+                .bgy-btn { 
+                    padding: 10px 20px; margin: 2px; border: 1px solid #aaa; 
+                    cursor: pointer; border-radius: 4px; background: #f8f9fa; font-weight: bold;
+                }
+                .bgy-btn.active { 
+                    background-color: #007bff !important; 
+                    color: white !important; 
+                    border-color: #0056b3 !important; 
+                }
+                .bgy-btn:hover { background: #e2e6ea; }
+            </style>
         </div>
-
-        <style>
-            #sidebar { display: none !important; }
-            #elements { width: 100% !important; margin: 0 auto !important; position: relative !important; }
-
-            .world-grid-parent {
-                position: absolute !important;
-                top: 150px; 
-                left: 0; right: 0;
-                margin-left: auto !important; margin-right: auto !important;
-                width: 600px !important; height: 600px !important;
-                transition: opacity 0.3s ease;
-                background: white;
-            }
-
-            .switcher-box { 
-                width: 100%; text-align: center; padding: 15px; 
-                background: white; z-index: 9999 !important; position: relative;
-            }
-            .bgy-btn { 
-                padding: 10px 20px; margin: 2px; border: 1px solid #aaa; 
-                cursor: pointer; border-radius: 4px; background: #f8f9fa; font-weight: bold;
-            }
-            .bgy-btn.active { 
-                background-color: #007bff !important; 
-                color: white !important; 
-                border-color: #0056b3 !important; 
-            }
-            .bgy-btn:hover { background: #e2e6ea; }
-        </style>
         """
 
 # --- 3. Setup Elements ---
@@ -154,13 +162,13 @@ visual_elements = []
 visual_elements.append(ViewSwitcher()) 
 visual_elements.append(Spacer())
 
-# A. Create the 7 Maps (Grids)
+# A. Create the 7 Maps
 for i in range(7):
     portrayal_fn = make_barangay_portrayal(f"BGY_{i}")
     grid = CanvasGrid(portrayal_fn, 50, 50, 600, 600)
     visual_elements.append(grid)
 
-# B. Create the Compliance Chart
+# B. Compliance Chart
 barangay_chart_data = [
     {"Label": "Poblacion",    "Color": "red"},
     {"Label": "Liangan East", "Color": "orange"},
@@ -170,24 +178,29 @@ barangay_chart_data = [
     {"Label": "Mati",         "Color": "blue"},
     {"Label": "Demologan",    "Color": "purple"}
 ]
-
 chart_compliance = ChartModule(
     [{"Label": "Global Compliance", "Color": "Black"}] + barangay_chart_data,
     data_collector_name='datacollector'
 )
 visual_elements.append(chart_compliance)
 
-# C. Create the Finance Chart (FIXED: This was missing)
+# C. Finance Chart
 chart_finance = ChartModule(
     [{"Label": "Total Fines", "Color": "Red"}],
     data_collector_name='datacollector'
 )
 visual_elements.append(chart_finance)
 
-# --- 4. Launch ---
+# --- 4. Launch with Policy Choice ---
 model_params = {
     "seed": 42,
-    "train_mode": False 
+    "train_mode": False,
+    # THIS IS THE POLICY UI YOU WANTED:
+    "policy_mode": Choice(
+        name="LGU Policy Strategy",  
+        value="status_quo",      
+        choices=["status_quo", "pure_incentives", "pure_enforcement", "ppo"]
+    )
 }
 
 server = ModularServer(
