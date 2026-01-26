@@ -2,13 +2,14 @@
 
 # =============================================================================
 #  MUNICIPAL LEVEL CONSTANTS 
+#  Source: Appendix B.1 (MENRO Interview) & Appropriation Ord. No. 2024-01
 # =============================================================================
-ANNUAL_BUDGET = 1000000   
-QUARTERLY_BUDGET = 375000 
-MIN_WAGE = 400            
+ANNUAL_BUDGET = 1500000   # Updated from 1.1M to 1.5M based on MENRO Interview
+QUARTERLY_BUDGET = 375000 # 1.5M / 4
+MIN_WAGE = 400            # Daily minimum wage reference (Region X)
 
 # =============================================================================
-#  INCOME PROFILES
+#  INCOME PROFILES (Calibrated from Appendix B Interviews)
 # =============================================================================
 INCOME_PROFILES = {
     "Babalaya":      [0.80, 0.10, 0.10], 
@@ -24,49 +25,28 @@ INCOME_PROFILES = {
 #  BEHAVIORAL PROFILES (FINAL STABILIZATION)
 #  Goal: Global Avg 10-15%.
 #  Constraint: Binuni, Ezperanza, Babalaya are leaders (max 45%).
-#  Mechanism: Increased c_effort significantly to prevent 100% spikes.
 # =============================================================================
 BEHAVIOR_PROFILES = {
-    # --- THE TOP 3 PERFORMERS (Target: 30% - 45%) ---
-    # We give them slightly lower effort costs than the rest, 
-    # but still high enough to stop them from hitting 90%.
-
     # 1. Binuni (Rich & Capable):
-    # Effort: 0.55 -> 0.60 (Increased friction to cap at ~40%)
-    # Decay: 0.005 (Sticky habits help them maintain the lead)
-    "Binuni":       { "w_a": 0.75, "w_sn": 0.80, "w_pbc": 0.65, "c_effort": 0.60, "decay": 0.005 },
+    "Binuni":       { "w_a": 0.75, "w_sn": 0.80, "w_pbc": 0.65, "c_effort": 0.64, "decay": 0.005 },
 
     # 2. Ezperanza (Consistent):
-    # Effort: 0.50 -> 0.58 (Harder now)
-    # Decay: 0.015
-    "Ezperanza":    { "w_a": 0.40, "w_sn": 0.70, "w_pbc": 0.50, "c_effort": 0.58, "decay": 0.015 },
+    "Ezperanza":    { "w_a": 0.40, "w_sn": 0.70, "w_pbc": 0.50, "c_effort": 0.54, "decay": 0.015 },
 
     # 3. Babalaya (Motivated but Poor):
-    # Effort: 0.60 -> 0.62 (Needs to be difficult due to poverty, but motivation is high)
-    # Decay: 0.03
     "Babalaya":     { "w_a": 0.80, "w_sn": 0.90, "w_pbc": 0.70, "c_effort": 0.62, "decay": 0.03 },
 
-
-    # --- THE LAGGARDS (Target: 5% - 15%) ---
-    # We CRUSH these down with high c_effort to balance the global average.
-
     # 4. Liangan East (The False Spike):
-    # CRITICAL FIX: Effort raised 0.45 -> 0.68.
-    # This will stop the explosion to 78%. They will now struggle to pass 20%.
-    "Liangan_East": { "w_a": 0.65, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.68, "decay": 0.05 },
+    "Liangan_East": { "w_a": 0.65, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.58, "decay": 0.05 },
 
     # 5. Poblacion (The Anchor):
-    # Effort: 0.65 -> 0.75 (Maximum difficulty).
-    # This ensures Poblacion stays near 0-2%, dragging the global average down.
-    "Poblacion":    { "w_a": 0.55, "w_sn": 0.20, "w_pbc": 0.40, "c_effort": 0.75, "decay": 0.10 },
+    "Poblacion":    { "w_a": 0.55, "w_sn": 0.20, "w_pbc": 0.40, "c_effort": 0.70, "decay": 0.10 },
 
     # 6. Demologan:
-    # Effort: 0.60 -> 0.68
-    "Demologan":    { "w_a": 0.70, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.68, "decay": 0.08 },
+    "Demologan":    { "w_a": 0.70, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.62, "decay": 0.08 },
 
     # 7. Mati:
-    # Effort: 0.55 -> 0.65
-    "Mati":         { "w_a": 0.60, "w_sn": 0.50, "w_pbc": 0.40, "c_effort": 0.65, "decay": 0.10 },
+    "Mati":         { "w_a": 0.60, "w_sn": 0.50, "w_pbc": 0.40, "c_effort": 0.60, "decay": 0.10 },
 }
 
 # =============================================================================
