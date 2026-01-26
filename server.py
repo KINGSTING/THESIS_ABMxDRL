@@ -169,15 +169,17 @@ for i in range(7):
     visual_elements.append(grid)
 
 # B. Compliance Chart
+# FIX: Labels must match "name" in barangay_config.py EXACTLY
 barangay_chart_data = [
-    {"Label": "Poblacion",    "Color": "red"},
-    {"Label": "Liangan East", "Color": "orange"},
-    {"Label": "Ezperanza",    "Color": "gold"},
-    {"Label": "Binuni",       "Color": "green"},
-    {"Label": "Babalaya",     "Color": "cyan"},
-    {"Label": "Mati",         "Color": "blue"},
-    {"Label": "Demologan",    "Color": "purple"}
+    {"Label": "Brgy Poblacion",    "Color": "red"},     # Was "Poblacion"
+    {"Label": "Brgy Liangan East", "Color": "orange"},  # Was "Liangan East"
+    {"Label": "Brgy Ezperanza",    "Color": "gold"},    # Was "Ezperanza"
+    {"Label": "Brgy Binuni",       "Color": "green"},   # Was "Binuni"
+    {"Label": "Brgy Babalaya",     "Color": "cyan"},    # Was "Babalaya"
+    {"Label": "Brgy Mati",         "Color": "blue"},    # Was "Mati"
+    {"Label": "Brgy Demologan",    "Color": "purple"}   # Was "Demologan"
 ]
+
 chart_compliance = ChartModule(
     [{"Label": "Global Compliance", "Color": "Black"}] + barangay_chart_data,
     data_collector_name='datacollector'

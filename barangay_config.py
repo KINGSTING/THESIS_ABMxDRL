@@ -1,121 +1,131 @@
 # barangay_config.py
 
-# --- FINANCIAL CONSTANTS ---
-ANNUAL_BUDGET = 1500000
-QUARTERLY_BUDGET = 375000
-MIN_WAGE = 400
+# =============================================================================
+#  MUNICIPAL LEVEL CONSTANTS 
+# =============================================================================
+ANNUAL_BUDGET = 1000000   
+QUARTERLY_BUDGET = 375000 
+MIN_WAGE = 400            
 
-# --- INCOME DISTRIBUTIONS ---
+# =============================================================================
+#  INCOME PROFILES
+# =============================================================================
 INCOME_PROFILES = {
-    "low":    [0.7, 0.2, 0.1],
-    "middle": [0.3, 0.5, 0.2],
-    "high":   [0.1, 0.3, 0.6]
+    "Babalaya":      [0.80, 0.10, 0.10], 
+    "Binuni":        [0.50, 0.30, 0.20], 
+    "Demologan":     [0.80, 0.15, 0.05], 
+    "Ezperanza":     [0.20, 0.50, 0.30], 
+    "Liangan_East":  [0.40, 0.40, 0.20], 
+    "Mati":          [0.90, 0.05, 0.05],
+    "Poblacion":     [0.70, 0.25, 0.05],
 }
 
-# --- BEHAVIORAL PARAMETERS (HARDENED CALIBRATION) ---
-# FIX APPLIED: "The 0.40 Rule"
-# 1. w_a (Attitude) is capped at 0.30 - 0.40. 
-#    Even with 100% IEC (Attitude=1.0), the Utility gain is only 0.40.
-#    This is BELOW the 0.50 threshold, so they WON'T comply on education alone.
-# 2. They need Social Norms (w_sn) or low Cost (c_effort) to bridge the gap.
-
+# =============================================================================
+#  BEHAVIORAL PROFILES (FINAL STABILIZATION)
+#  Goal: Global Avg 10-15%.
+#  Constraint: Binuni, Ezperanza, Babalaya are leaders (max 45%).
+#  Mechanism: Increased c_effort significantly to prevent 100% spikes.
+# =============================================================================
 BEHAVIOR_PROFILES = {
-    "Poblacion": {
-        # Urban: High Hassle (0.35 Cost).
-        # Even if they know better (IEC), traffic/time stops them.
-        "w_a": 0.65, "w_sn": 0.5, "w_pbc": 0.3, "c_effort": 0.20, "decay": 0.0028
-    },
-    "Liangan_East": {
-        # Model Barangay: Lower Cost (0.25).
-        # With IEC (0.35 boost) + Low Cost (-0.25) + Norms, they hit ~30% but not 100%.
-        "w_a": 0.65, "w_sn": 0.5, "w_pbc": 0.3, "c_effort": 0.20, "decay": 0.0028
-    },
-    "Ezperanza": {
-        # Resistant: High Cost (0.40).
-        # IEC will raise them from 0% to maybe 5%, but barriers are too high.
-        "w_a": 0.60, "w_sn": 0.45, "w_pbc": 0.3, "c_effort": 0.20, "decay": 0.0028
-    },
-    "Binuni": {
-        # Riverside: Moderate.
-        "w_a": 0.65, "w_sn": 0.45, "w_pbc": 0.3, "c_effort": 0.20, "decay": 0.0028
-    },
-    "Demologan": {
-        # Transition area.
-        "w_a": 0.65, "w_sn": 0.45, "w_pbc": 0.3, "c_effort": 0.2, "decay": 0.0028
-    },
-    "Mati": {
-        # Small community.
-        "w_a": 0.60, "w_sn": 0.5, "w_pbc": 0.4, "c_effort": 0.33, "decay": 0.0030
-    },
-    "Babalaya": {
-        # Remote area.
-        "w_a": 0.60, "w_sn": 0.5, "w_pbc": 0.4, "c_effort": 0.33, "decay": 0.0030
-    }
+    # --- THE TOP 3 PERFORMERS (Target: 30% - 45%) ---
+    # We give them slightly lower effort costs than the rest, 
+    # but still high enough to stop them from hitting 90%.
+
+    # 1. Binuni (Rich & Capable):
+    # Effort: 0.55 -> 0.60 (Increased friction to cap at ~40%)
+    # Decay: 0.005 (Sticky habits help them maintain the lead)
+    "Binuni":       { "w_a": 0.75, "w_sn": 0.80, "w_pbc": 0.65, "c_effort": 0.60, "decay": 0.005 },
+
+    # 2. Ezperanza (Consistent):
+    # Effort: 0.50 -> 0.58 (Harder now)
+    # Decay: 0.015
+    "Ezperanza":    { "w_a": 0.40, "w_sn": 0.70, "w_pbc": 0.50, "c_effort": 0.58, "decay": 0.015 },
+
+    # 3. Babalaya (Motivated but Poor):
+    # Effort: 0.60 -> 0.62 (Needs to be difficult due to poverty, but motivation is high)
+    # Decay: 0.03
+    "Babalaya":     { "w_a": 0.80, "w_sn": 0.90, "w_pbc": 0.70, "c_effort": 0.62, "decay": 0.03 },
+
+
+    # --- THE LAGGARDS (Target: 5% - 15%) ---
+    # We CRUSH these down with high c_effort to balance the global average.
+
+    # 4. Liangan East (The False Spike):
+    # CRITICAL FIX: Effort raised 0.45 -> 0.68.
+    # This will stop the explosion to 78%. They will now struggle to pass 20%.
+    "Liangan_East": { "w_a": 0.65, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.68, "decay": 0.05 },
+
+    # 5. Poblacion (The Anchor):
+    # Effort: 0.65 -> 0.75 (Maximum difficulty).
+    # This ensures Poblacion stays near 0-2%, dragging the global average down.
+    "Poblacion":    { "w_a": 0.55, "w_sn": 0.20, "w_pbc": 0.40, "c_effort": 0.75, "decay": 0.10 },
+
+    # 6. Demologan:
+    # Effort: 0.60 -> 0.68
+    "Demologan":    { "w_a": 0.70, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.68, "decay": 0.08 },
+
+    # 7. Mati:
+    # Effort: 0.55 -> 0.65
+    "Mati":         { "w_a": 0.60, "w_sn": 0.50, "w_pbc": 0.40, "c_effort": 0.65, "decay": 0.10 },
 }
 
-# --- BARANGAY DEFINITIONS ---
-BARANGAY_CONFIGS = [
+# =============================================================================
+#  ALLOCATION PROFILES
+# =============================================================================
+ALLOCATION_PROFILES = {
+    "Liangan_East": {"enf": 0.25, "inc": 0.65, "iec": 0.10},
+    "Poblacion":    {"enf": 0.60, "inc": 0.20, "iec": 0.20},
+    "Babalaya":     {"enf": 0.90, "inc": 0.05, "iec": 0.05},
+    "Demologan":    {"enf": 0.85, "inc": 0.10, "iec": 0.05},
+    "Binuni":       {"enf": 0.40, "inc": 0.40, "iec": 0.20},
+    "Mati":         {"enf": 0.30, "inc": 0.50, "iec": 0.20},
+    "Ezperanza":    {"enf": 0.50, "inc": 0.30, "iec": 0.20},
+}
+
+# =============================================================================
+#  BARANGAY CONFIGURATION LIST
+# =============================================================================
+BARANGAY_LIST = [
     {
-        "id": 0,
-        "name": "Brgy Poblacion", 
-        "N_HOUSEHOLDS": 1530, 
-        "N_OFFICIALS": 0, 
-        "initial_compliance": 0.13, 
-        "income_profile": "middle",
-        "behavior_profile": "Poblacion"
+        "id": 1, "name": "Brgy Liangan East", "N_HOUSEHOLDS": 608, "local_budget": 30000, 
+        "initial_compliance": 0.14, 
+        "income_profile": "Liangan_East", "behavior_profile": "Liangan_East",
+        "allocation_profile": "Liangan_East" 
     },
     {
-        "id": 1, 
-        "name": "Brgy Liangan East", 
-        "N_HOUSEHOLDS": 584, 
-        "N_OFFICIALS": 0, 
-        "initial_compliance": 0.13, 
-        "income_profile": "middle",
-        "behavior_profile": "Liangan_East"
+        "id": 2, "name": "Brgy Ezperanza", "N_HOUSEHOLDS": 574, "local_budget": 90000, 
+        "initial_compliance": 0.14, 
+        "income_profile": "Ezperanza", "behavior_profile": "Ezperanza",
+        "allocation_profile": "Ezperanza" 
     },
     {
-        "id": 2, 
-        "name": "Brgy Ezperanza", 
-        "N_HOUSEHOLDS": 678, 
-        "N_OFFICIALS": 0, 
-        "initial_compliance": 0.13, 
-        "income_profile": "low",
-        "behavior_profile": "Ezperanza"
+        "id": 3, "name": "Brgy Poblacion", "N_HOUSEHOLDS": 1534, "local_budget": 200000, 
+        "initial_compliance": 0.02, 
+        "income_profile": "Poblacion", "behavior_profile": "Poblacion",
+        "allocation_profile": "Poblacion" 
     },
     {
-        "id": 3, 
-        "name": "Brgy Binuni", 
-        "N_HOUSEHOLDS": 476, 
-        "N_OFFICIALS": 0, 
-        "initial_compliance": 0.13, 
-        "income_profile": "middle",
-        "behavior_profile": "Binuni"
+        "id": 4, "name": "Brgy Binuni", "N_HOUSEHOLDS": 507, "local_budget": 126370, 
+        "initial_compliance": 0.15, 
+        "income_profile": "Binuni", "behavior_profile": "Binuni",
+        "allocation_profile": "Binuni" 
     },
     {
-        "id": 4, 
-        "name": "Brgy Babalaya", 
-        "N_HOUSEHOLDS": 169, 
-        "N_OFFICIALS": 0, 
-        "initial_compliance": 0.13, 
-        "income_profile": "middle",
-        "behavior_profile": "Babalaya"
+        "id": 5, "name": "Brgy Demologan", "N_HOUSEHOLDS": 463, "local_budget": 21000, 
+        "initial_compliance": 0.11, 
+        "income_profile": "Demologan", "behavior_profile": "Demologan",
+        "allocation_profile": "Demologan" 
     },
     {
-        "id": 5, 
-        "name": "Brgy Mati", 
-        "N_HOUSEHOLDS": 160, 
-        "N_OFFICIALS": 0, 
-        "initial_compliance": 0.13, 
-        "income_profile": "middle",
-        "behavior_profile": "Mati"
+        "id": 6, "name": "Brgy Mati", "N_HOUSEHOLDS": 165, "local_budget": 80000, 
+        "initial_compliance": 0.11, 
+        "income_profile": "Mati", "behavior_profile": "Mati",
+        "allocation_profile": "Mati" 
     },
     {
-        "id": 6, 
-        "name": "Brgy Demologan", 
-        "N_HOUSEHOLDS": 496, 
-        "N_OFFICIALS": 0, 
-        "initial_compliance": 0.13, 
-        "income_profile": "middle",
-        "behavior_profile": "Demologan"
+        "id": 7, "name": "Brgy Babalaya", "N_HOUSEHOLDS": 171, "local_budget": 15000, 
+        "initial_compliance": 0.14, 
+        "income_profile": "Babalaya", "behavior_profile": "Babalaya",
+        "allocation_profile": "Babalaya" 
     }
 ]

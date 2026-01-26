@@ -6,92 +6,148 @@ from agents.bacolod_model import BacolodModel
 class BacolodGymEnv(gym.Env):
     """
     Custom Environment that follows gymnasium interface.
-    This connects the BacolodModel (ABM) to the RL Agent.
-    
-    Thesis Alignment:
-    - Action Space: Continuous (Box), size 21 (3 levers * 7 barangays) [Thesis Section 3.4.3]
-    - Observation Space: Continuous (Box), size 10 (Compliance + Budget + Time + PolCap) [Thesis Section 3.4.2]
-    - Reward Function: Multi-Objective (Compliance + Sustainability - Backlash) [Thesis Section 3.4.4]
+    Connects the BacolodModel (ABM) to the RL Agent.
     """
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
         super(BacolodGymEnv, self).__init__()
 
-        # --- 1. DEFINE ACTION SPACE (Thesis Eq 3.8) ---
-        # 21 Continuous values representing the fraction of the Quarterly Budget.
-        # Range: [0.0, 1.0]
-        # Order: [Bgy0_IEC, Bgy0_Enf, Bgy0_Inc, Bgy1_IEC, ..., Bgy6_Inc]
-        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(21,), dtype=np.float32)
+        # --- 1. DEFINE ACTION SPACE ---
+        # Allow negative numbers ([-5, 5]) because we use Softmax later.
+        # This fixes the "Zero Trap" where the AI gets stuck at 0%.
+        self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(3,), dtype=np.float32)
 
-        # --- 2. DEFINE OBSERVATION SPACE (Thesis Eq 3.6) ---
-        # 10 Continuous values: 
-        # [CB_1, CB_2, ..., CB_7, B_Rem, M_Index, P_Cap]
-        # Range: [0.0, 1.0] (Everything is normalized)
+        # --- 2. DEFINE OBSERVATION SPACE ---
+        # 10 Continuous values: [CB_1..7, Budget, Time, PolCap]
         self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(10,), dtype=np.float32)
 
-        # Initialize the ABM container
         self.model = None
 
     def reset(self, seed=None, options=None):
         """
-        Resets the simulation for a new training episode (Start of a new 3-year term).
+        Resets the environment to the initial state.
         """
         super().reset(seed=seed)
         
-        # Create a fresh instance of the ABM
-        # We use a fixed seed for reproducibility during debugging, but random for training
-        self.model = BacolodModel(seed=seed if seed else 42)
+        # Initialize the ABM Model
+        # CRITICAL: train_mode=True speeds it up, policy_mode="ai" connects the brain
+        self.model = BacolodModel(seed=seed, train_mode=True, policy_mode="ai")
         
-        # Get the initial state (S_0)
-        observation = self.model.get_state()
-        
-        return observation, {}
+        # Return the first observation
+        return self._get_observation(), {}
 
     def step(self, action):
         """
-        The AI takes ONE action (Budget Allocation), and the environment advances by ONE QUARTER.
-        Thesis Section 3.2.3: "The DRL agent will make policy adjustments every quarter."
+        Execute one step in the environment.
         """
-        # 1. Apply the AI's action to the model (The "Hands")
-        self.model.apply_action(action)
+        # --- FIX: SOFTMAX NORMALIZATION ---
+        # This converts the AI's raw output (which might be negative) 
+        # into a valid percentage distribution that ALWAYS sums to 1.0.
+        # This prevents the "0% Budget" bug.
         
-        # 2. Run the simulation for ONE QUARTER (90 days/ticks)
-        # The AI operates on a quarterly clock, while the ABM operates on a daily clock.
-        for _ in range(90):
-            self.model.step()
-            
-            # Stop early if the simulation ends (e.g., 3 years passed)
-            if not self.model.running:
-                break
+        # 1. Shift values to prevent overflow (Numerical Stability)
+        # 2. Calculate Softmax
+        exps = np.exp(action - np.max(action))
+        allocation_percentages = exps / np.sum(exps)
         
-        # 3. Get the new State (S_t+1) (The "Eyes")
-        observation = self.model.get_state()
+        # 3. Apply these % to the ABM
+        self.model.apply_action(allocation_percentages)
+        self.model.step()
+
+        # 4. Get New State
+        obs = self._get_observation()
         
-        # 4. Calculate Reward (R_t) (The "Scoreboard")
-        reward = self.model.calculate_reward()
+        # 5. Calculate Reward
+        reward = self.calculate_reward(obs)
         
-        # 5. Check Termination
-        # The episode ends if the ABM stops running (e.g., 3 years/1080 ticks reached)
-        terminated = not self.model.running
-        truncated = False 
+        # 6. Check Termination (10 Years = 40 Quarters)
+        terminated = self.model.quarter >= 40
+        truncated = False
         
-        # Debug Info (Optional)
+        # 7. Info for Logs
         info = {
-            "step": self.model.schedule.steps,
-            "budget": self.model.current_budget,
-            "compliance": observation[0:7].mean() # Avg compliance
+            "quarter": self.model.quarter, 
+            "compliance": np.mean(obs[0:7]),
+            "raw_ai_output": action,
+            "actual_allocation": allocation_percentages
         }
+
+        return obs, reward, terminated, truncated, info
+
+    def _get_observation(self):
+        """
+        Extracts the state from the ABM and normalizes it for the AI.
+        This was missing in your previous code causing the AttributeError.
+        """
+        if self.model is None:
+            return np.zeros(10, dtype=np.float32)
+
+        # 1. Compliance Rates (0.0 to 1.0) for 7 Barangays
+        compliance_rates = [b.compliance_rate for b in self.model.barangays]
         
-        return observation, reward, terminated, truncated, info
+        # 2. Budget Remaining (Normalized)
+        # Assuming Max Budget is roughly 400k for normalization
+        budget_norm = self.model.quarterly_budget / 400000.0
+        budget_norm = np.clip(budget_norm, 0, 1)
+
+        # 3. Time Remaining (Normalized 0 to 1)
+        time_norm = self.model.quarter / 40.0
+        
+        # 4. Political Capital (Normalized)
+        pol_cap = getattr(self.model, 'political_capital', 1.0)
+
+        # Combine into a single array
+        # Ensure we have exactly 10 elements
+        obs_list = compliance_rates + [budget_norm, time_norm, pol_cap]
+        
+        # Safety padding if compliance_rates is missing data (e.g. init issues)
+        if len(obs_list) < 10:
+            obs_list += [0.0] * (10 - len(obs_list))
+            
+        obs = np.array(obs_list, dtype=np.float32)
+        return obs
+
+    def calculate_reward(self, obs):
+        """
+        Thesis Section 3.4.4: Revised Multi-Objective Reward Function
+        Focus: STRICT Compliance Goal. Budget is a constraint, not a goal.
+        """
+        # A. COMPLIANCE (Maximize)
+        # obs[0:7] contains the compliance rates
+        compliances = obs[0:7]
+        avg_compliance = np.mean(compliances)
+        
+        # Power function: 0.9 is WAY better than 0.5
+        r_compliance = (avg_compliance ** 2) * 10.0 
+
+        # B. FAIL PENALTY (The "Poblacion Constraint")
+        # If the worst barangay is below 5%, punish hard.
+        min_compliance = np.min(compliances)
+        r_fail = 0.0
+        if min_compliance < 0.05:
+            r_fail = -5.0 
+
+        # C. BANKRUPTCY PENALTY
+        # Punish only if budget is effectively zero
+        budget_remaining = obs[7]
+        r_bankruptcy = 0.0
+        if budget_remaining <= 0.01:
+            r_bankruptcy = -5.0
+
+        # D. POLITICAL CAPITAL
+        pol_cap = obs[9]
+        r_pol_cap = 0.0
+        if pol_cap < 0.3:
+            r_pol_cap = -5.0
+
+        # TOTAL
+        total_reward = r_compliance + r_fail + r_bankruptcy + r_pol_cap
+        return float(total_reward)
 
     def render(self, mode='human'):
-        """
-        Optional: Print stats to console for debugging.
-        """
         if self.model:
-            obs = self.model.get_state()
-            print(f"--- Quarter {(self.model.schedule.steps // 90)} Report ---")
-            print(f"Avg Compliance: {obs[0:7].mean():.2f}")
-            print(f"Budget Left: {obs[7]*100:.1f}%")
-            print(f"Political Cap: {obs[9]:.2f}")
+            obs = self._get_observation()
+            print(f"--- Quarter {self.model.quarter} Report ---")
+            print(f"Avg Compliance: {np.mean(obs[0:7]):.2f}")
+            print(f"Budget Left:    {obs[7]*100:.1f}%")
