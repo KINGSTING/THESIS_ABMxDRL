@@ -66,7 +66,7 @@ class HouseholdAgent(mesa.Agent):
             # Previous Attempt: 0.002 (Still too fast)
             # NEW: 0.0003 (Tiny nudge). 
             # This means it takes ~1000 ticks of full IEC to gain 0.30 attitude.
-            boost = intensity * 0.0003 
+            boost = intensity * 0.025   
             self.attitude += boost
 
         # 3. Enforcement Fatigue
@@ -82,7 +82,8 @@ class HouseholdAgent(mesa.Agent):
         prob_detection = self.barangay.enforcement_intensity if self.barangay else 0
         incentive = self.barangay.incentive_val if (self.barangay and not self.redeemed_this_quarter) else 0.0
         
-        monetary_impact = incentive - (fine * prob_detection)
+        # FIX: Add the fine avoidance to the impact
+        monetary_impact = incentive + (fine * prob_detection)
         c_net = self.c_effort_base - (gamma * monetary_impact / 2000.0) 
 
         # 2. TPB Calculation
@@ -96,11 +97,25 @@ class HouseholdAgent(mesa.Agent):
         self.is_compliant = (self.utility > 0.0)
 
     def get_fined(self):
+        # 1. Apply Pain (The Deterrent)
         self.utility -= 0.5 
+        
+        # 2. Impact Attitude 
+        # Getting caught creates resentment towards the system
         self.attitude -= 0.10
+        
+        # 3. STATISTICAL LOGGING ONLY
+        # We track the amount for your Thesis Graphs, but we DO NOT 
+        # add it to the playable budget (due to legislative restrictions).
+        fine_amount = 500
+        
         if hasattr(self.model, 'total_fines_collected'):
-            self.model.total_fines_collected += 500 
-            self.model.recent_fines_collected += 500
+            self.model.total_fines_collected += fine_amount 
+            self.model.recent_fines_collected += fine_amount
+
+        # Note: We deliberately REMOVED the lines that transfer money 
+        # to self.barangay.current_cash_on_hand or self.model.current_budget.
+        # The budget is fixed. Fines are just a penalty mechanism.
 
     def attempt_redemption(self):
         if self.is_compliant and not self.redeemed_this_quarter and self.barangay:

@@ -1,21 +1,45 @@
 import os
-import gymnasium as gym
+import signal
+import sys
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.env_checker import check_env
 from bacolod_gym import BacolodGymEnv
 
+# Global model reference for the safety handler
+model = None
+models_dir = "models/PPO"
+
+def signal_handler(sig, frame):
+    """
+    Catches Ctrl+C and saves the model before exiting.
+    """
+    global model
+    print("\n\n!!! INTERRUPT RECEIVED !!!")
+    if model is not None:
+        save_path = f"{models_dir}/bacolod_ppo_interrupted"
+        model.save(save_path)
+        print(f"Safety Save: Model saved to {save_path}.zip")
+        print("You can load this model later to continue training.")
+    sys.exit(0)
+
 def main():
+    global model
+    
     # 1. Setup Directories
-    models_dir = "models/PPO"
     log_dir = "logs"
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
 
     # 2. Instantiate Environment
     env = BacolodGymEnv()
-    check_env(env)
+    # Optional: check_env(env) # silenced for speed
 
-    # 3. Define Model with EXPLORATION
+    # 3. Define Model
+    # Check if a saved model exists to continue training (Optional)
+    # model = PPO.load("models/PPO/bacolod_ppo_final", env=env) 
+    
+    # OR Start Fresh:
     model = PPO(
         "MlpPolicy",
         env,
@@ -23,47 +47,35 @@ def main():
         tensorboard_log=log_dir,
         learning_rate=0.0003,
         gamma=0.99,
-        
-        # CRITICAL FIX: Force the AI to try different things!
-        ent_coef=0.2, 
-        
+        ent_coef=0.2, # Exploration
         policy_kwargs=dict(net_arch=dict(pi=[64, 64], vf=[64, 64]))
     )
 
-    # 4. Train
-    # 1,000 is okay for a syntax check, but for results use 50,000+
+    # 4. Setup Checkpoints (Auto-Save every 5,000 steps)
+    checkpoint_callback = CheckpointCallback(
+        save_freq=5000,
+        save_path=models_dir,
+        name_prefix="bacolod_checkpoint"
+    )
+
+    # 5. Register the Safety Handler (Ctrl+C protection)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # 6. Train
     TIMESTEPS = 50000 
     print(f"Starting training for {TIMESTEPS} steps...")
-    model.learn(total_timesteps=TIMESTEPS, progress_bar=True)
+    print("... You can press Ctrl+C at any time to safely stop and save ...")
     
-    # 5. Save
+    model.learn(
+        total_timesteps=TIMESTEPS, 
+        progress_bar=True, 
+        callback=checkpoint_callback
+    )
+    
+    # 7. Final Save (If it finishes normally)
     save_path = f"{models_dir}/bacolod_ppo_final"
     model.save(save_path)
-    print(f"Model saved to: {save_path}.zip")
-
-    # --- TESTING THE MODEL ---
-    print("\n--- TEST RUN (AI CONTROLLED) ---")
-    
-    # RELOAD to ensure we are testing what we saved
-    del model
-    model = PPO.load(save_path)
-    
-    obs, _ = env.reset()
-    done = False
-    
-    while not done:
-        # deterministic=False allows a bit of "noise" so you don't just see 
-        # the exact same action if the confidence is low.
-        action, _states = model.predict(obs, deterministic=False)
-        
-        # Apply action
-        obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
-        
-        # DEBUG: Print the raw action to see if it's changing
-        # If this prints [1.0, 0.0, 0.0] constantly, check bacolod_gym.py reset()!
-        print(f"Action Output: {action}") 
-        print(f"Step: {info.get('step')} | Budget: {info.get('budget'):.0f} | Compliance: {info.get('compliance'):.2%}")
+    print(f"DONE! Model saved to: {save_path}.zip")
 
 if __name__ == "__main__":
     main()

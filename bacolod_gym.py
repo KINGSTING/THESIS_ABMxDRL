@@ -14,9 +14,9 @@ class BacolodGymEnv(gym.Env):
         super(BacolodGymEnv, self).__init__()
 
         # --- 1. DEFINE ACTION SPACE ---
-        # Allow negative numbers ([-5, 5]) because we use Softmax later.
-        # This fixes the "Zero Trap" where the AI gets stuck at 0%.
-        self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(3,), dtype=np.float32)
+        # shape=(21,) -> Unlocks "Granular Control"
+        # Structure: [Bgy0_IEC, Bgy0_Enf, Bgy0_Inc, Bgy1_IEC, ... Bgy6_Inc]
+        self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(21,), dtype=np.float32)
 
         # --- 2. DEFINE OBSERVATION SPACE ---
         # 10 Continuous values: [CB_1..7, Budget, Time, PolCap]
@@ -31,7 +31,7 @@ class BacolodGymEnv(gym.Env):
         super().reset(seed=seed)
         
         # Initialize the ABM Model
-        # CRITICAL: train_mode=True speeds it up, policy_mode="ai" connects the brain
+        # train_mode=True speeds it up, policy_mode="ai" connects the brain
         self.model = BacolodModel(seed=seed, train_mode=True, policy_mode="ai")
         
         # Return the first observation
@@ -42,10 +42,6 @@ class BacolodGymEnv(gym.Env):
         Execute one step in the environment.
         """
         # --- FIX: SOFTMAX NORMALIZATION ---
-        # This converts the AI's raw output (which might be negative) 
-        # into a valid percentage distribution that ALWAYS sums to 1.0.
-        # This prevents the "0% Budget" bug.
-        
         # 1. Shift values to prevent overflow (Numerical Stability)
         # 2. Calculate Softmax
         exps = np.exp(action - np.max(action))
@@ -78,7 +74,6 @@ class BacolodGymEnv(gym.Env):
     def _get_observation(self):
         """
         Extracts the state from the ABM and normalizes it for the AI.
-        This was missing in your previous code causing the AttributeError.
         """
         if self.model is None:
             return np.zeros(10, dtype=np.float32)
@@ -98,10 +93,9 @@ class BacolodGymEnv(gym.Env):
         pol_cap = getattr(self.model, 'political_capital', 1.0)
 
         # Combine into a single array
-        # Ensure we have exactly 10 elements
         obs_list = compliance_rates + [budget_norm, time_norm, pol_cap]
         
-        # Safety padding if compliance_rates is missing data (e.g. init issues)
+        # Safety padding if compliance_rates is missing data
         if len(obs_list) < 10:
             obs_list += [0.0] * (10 - len(obs_list))
             
@@ -111,22 +105,16 @@ class BacolodGymEnv(gym.Env):
     def calculate_reward(self, obs):
         """
         Thesis Section 3.4.4: Revised Multi-Objective Reward Function
-        Focus: STRICT Compliance Goal. Budget is a constraint, not a goal.
         """
         # A. COMPLIANCE (Maximize)
-        # obs[0:7] contains the compliance rates
         compliances = obs[0:7]
         avg_compliance = np.mean(compliances)
         
         # Power function: 0.9 is WAY better than 0.5
         r_compliance = (avg_compliance ** 2) * 10.0 
 
-        # B. FAIL PENALTY (The "Poblacion Constraint")
-        # If the worst barangay is below 5%, punish hard.
-        min_compliance = np.min(compliances)
+        # B. FAIL PENALTY (Disabled for training stability)
         r_fail = 0.0
-        if min_compliance < 0.05:
-            r_fail = -5.0 
 
         # C. BANKRUPTCY PENALTY
         # Punish only if budget is effectively zero

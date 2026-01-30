@@ -242,32 +242,36 @@ class BacolodModel(mesa.Model):
 
         if self.schedule.steps % 90 == 0:
             current_quarter = (self.schedule.steps // 90) + 1
-            if not self.behavior_override: 
-                print(f"\n--- Quarter {current_quarter} Decision Point ({self.policy_mode.upper()}) ---")
             
-            current_state = self.get_state()
-            action = []
+            # --- PART A: DECISION MAKING (The Overwrite Protection) ---
+            # We ONLY run this internal logic if the AI (Gym) is NOT in charge.
+            if not self.train_mode:
+                if not self.behavior_override: 
+                    print(f"\n--- Quarter {current_quarter} Decision Point ({self.policy_mode.upper()}) ---")
+                
+                current_state = self.get_state()
+                action = []
 
-            if self.policy_mode == "ppo" and self.rl_agent is not None:
-                action, _ = self.rl_agent.predict(current_state, deterministic=True)
-            else:
-                base_share = 0 
-                pop_share = 1 
-                total_hh = sum(b.n_households for b in self.barangays)
+                if self.policy_mode == "ppo" and self.rl_agent is not None:
+                    action, _ = self.rl_agent.predict(current_state, deterministic=True)
+                else:
+                    # Status Quo / Manual Logic
+                    base_share = 0 
+                    pop_share = 1 
+                    total_hh = sum(b.n_households for b in self.barangays)
 
-                for b in self.barangays:
-                    share_base = (1.0 / len(self.barangays)) * base_share
-                    share_pop = (b.n_households / total_hh) * pop_share
-                    total_weight = share_base + share_pop
+                    for b in self.barangays:
+                        share_base = (1.0 / len(self.barangays)) * base_share
+                        share_pop = (b.n_households / total_hh) * pop_share
+                        total_weight = share_base + share_pop
+                        # Default Status Quo Distribution
+                        action.extend([total_weight, 0.0, 0.0]) 
+                
+                # Only apply action here if we are NOT in training mode
+                self.apply_action(action)
 
-                    if self.policy_mode == "pure_incentives":
-                         action.extend([0.0, 0.0, total_weight])
-                    elif self.policy_mode == "pure_enforcement":
-                         action.extend([0.0, total_weight, 0.0])
-                    else: # Status Quo
-                         action.extend([total_weight, 0.0, 0.0])
-            
-            self.apply_action(action)
+            # --- PART B: REPORTING (Always Run This) ---
+            # We un-indented this so it runs even during training!
             self.log_quarterly_report(current_quarter)
 
         for b in self.barangays: b.step()

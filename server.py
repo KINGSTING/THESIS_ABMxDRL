@@ -186,13 +186,6 @@ chart_compliance = ChartModule(
 )
 visual_elements.append(chart_compliance)
 
-# C. Finance Chart
-chart_finance = ChartModule(
-    [{"Label": "Total Fines", "Color": "Red"}],
-    data_collector_name='datacollector'
-)
-visual_elements.append(chart_finance)
-
 # --- 4. Launch with Policy Choice ---
 model_params = {
     "seed": 42,
