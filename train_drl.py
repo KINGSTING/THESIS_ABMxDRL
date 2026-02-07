@@ -47,7 +47,7 @@ def main():
         tensorboard_log=log_dir,
         learning_rate=0.0003,
         gamma=0.99,
-        ent_coef=0.2, # Exploration
+        ent_coef=0.03, # Exploration
         policy_kwargs=dict(net_arch=dict(pi=[64, 64], vf=[64, 64]))
     )
 

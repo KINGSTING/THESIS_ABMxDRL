@@ -28,25 +28,25 @@ INCOME_PROFILES = {
 # =============================================================================
 BEHAVIOR_PROFILES = {
     # 1. Binuni (Rich & Capable):
-    "Binuni":       { "w_a": 0.75, "w_sn": 0.80, "w_pbc": 0.65, "c_effort": 0.64, "decay": 0.005 },
+    "Binuni":       { "w_a": 0.65, "w_sn": 0.80, "w_pbc": 0.65, "c_effort": 0.64, "decay": 0.02 },
 
     # 2. Ezperanza (Consistent):
-    "Ezperanza":    { "w_a": 0.40, "w_sn": 0.70, "w_pbc": 0.50, "c_effort": 0.54, "decay": 0.015 },
+    "Ezperanza":    { "w_a": 0.40, "w_sn": 0.70, "w_pbc": 0.50, "c_effort": 0.55, "decay": 0.03 },
 
     # 3. Babalaya (Motivated but Poor):
-    "Babalaya":     { "w_a": 0.80, "w_sn": 0.90, "w_pbc": 0.70, "c_effort": 0.62, "decay": 0.03 },
+    "Babalaya":     { "w_a": 0.60, "w_sn": 0.90, "w_pbc": 0.70, "c_effort": 0.62, "decay": 0.05 },
 
     # 4. Liangan East (The False Spike):
-    "Liangan_East": { "w_a": 0.65, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.58, "decay": 0.05 },
+    "Liangan_East": { "w_a": 0.65, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.58, "decay": 0.04 },
 
     # 5. Poblacion (The Anchor):
-    "Poblacion":    { "w_a": 0.55, "w_sn": 0.20, "w_pbc": 0.40, "c_effort": 0.70, "decay": 0.10 },
+    "Poblacion":    { "w_a": 0.55, "w_sn": 0.20, "w_pbc": 0.40, "c_effort": 0.48, "decay": 0.03 },
 
     # 6. Demologan:
-    "Demologan":    { "w_a": 0.70, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.62, "decay": 0.08 },
+    "Demologan":    { "w_a": 0.60, "w_sn": 0.60, "w_pbc": 0.50, "c_effort": 0.62, "decay": 0.05 },
 
     # 7. Mati:
-    "Mati":         { "w_a": 0.60, "w_sn": 0.50, "w_pbc": 0.40, "c_effort": 0.60, "decay": 0.10 },
+    "Mati":         { "w_a": 0.60, "w_sn": 0.50, "w_pbc": 0.40, "c_effort": 0.60, "decay": 0.05 },
 }
 
 # =============================================================================

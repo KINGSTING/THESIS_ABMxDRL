@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from agents.bacolod_model import BacolodModel
+from agents.household_agent import HouseholdAgent
 
 class BacolodGymEnv(gym.Env):
     """
@@ -20,9 +21,12 @@ class BacolodGymEnv(gym.Env):
 
         # --- 2. DEFINE OBSERVATION SPACE ---
         # 10 Continuous values: [CB_1..7, Budget, Time, PolCap]
-        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(10,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(17,), dtype=np.float32)
 
         self.model = None
+
+        # Initialize memory for the previous compliance rates (7 barangays)
+        self.prev_compliance = np.zeros(7, dtype=np.float32)
 
     def reset(self, seed=None, options=None):
         """
@@ -30,12 +34,15 @@ class BacolodGymEnv(gym.Env):
         """
         super().reset(seed=seed)
         
-        # Initialize the ABM Model
-        # train_mode=True speeds it up, policy_mode="ai" connects the brain
         self.model = BacolodModel(seed=seed, train_mode=True, policy_mode="ai")
         
-        # Return the first observation
-        return self._get_observation(), {}
+        obs = self._get_observation()
+        
+        # === ADD THIS LINE ===
+        # Capture the starting compliance (usually zeros or initial config)
+        self.prev_compliance = obs[0:7]
+        
+        return obs, {}
 
     def step(self, action):
         """
@@ -72,67 +79,66 @@ class BacolodGymEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def _get_observation(self):
-        """
-        Extracts the state from the ABM and normalizes it for the AI.
-        """
         if self.model is None:
-            return np.zeros(10, dtype=np.float32)
+            return np.zeros(17, dtype=np.float32)
 
-        # 1. Compliance Rates (0.0 to 1.0) for 7 Barangays
+        # 1. Compliance Rates
         compliance_rates = [b.compliance_rate for b in self.model.barangays]
         
-        # 2. Budget Remaining (Normalized)
-        # Assuming Max Budget is roughly 400k for normalization
-        budget_norm = self.model.quarterly_budget / 400000.0
-        budget_norm = np.clip(budget_norm, 0, 1)
+        # 2. NEW: Attitude Levels (X-Ray Vision)
+        # We calculate the average attitude for each barangay
+        attitude_rates = []
+        for b in self.model.barangays:
+            # Filter agents belonging to this barangay
+            households = [a for a in self.model.schedule.agents 
+                          if isinstance(a, HouseholdAgent) and a.barangay_id == b.unique_id]
+            
+            if households:
+                avg_att = np.mean([a.attitude for a in households])
+            else:
+                avg_att = 0.0
+            attitude_rates.append(avg_att)
 
-        # 3. Time Remaining (Normalized 0 to 1)
+        # 3. Global Variables
+        budget_norm = np.clip(self.model.quarterly_budget / 400000.0, 0, 1)
         time_norm = self.model.quarter / 40.0
-        
-        # 4. Political Capital (Normalized)
         pol_cap = getattr(self.model, 'political_capital', 1.0)
 
-        # Combine into a single array
-        obs_list = compliance_rates + [budget_norm, time_norm, pol_cap]
+        # Combine everything (7 + 7 + 3 = 17 values)
+        obs_list = compliance_rates + attitude_rates + [budget_norm, time_norm, pol_cap]
         
-        # Safety padding if compliance_rates is missing data
-        if len(obs_list) < 10:
-            obs_list += [0.0] * (10 - len(obs_list))
-            
-        obs = np.array(obs_list, dtype=np.float32)
-        return obs
+        # Safety padding if needed
+        if len(obs_list) < 17:
+             obs_list += [0.0] * (17 - len(obs_list))
+             
+        return np.array(obs_list, dtype=np.float32)
 
     def calculate_reward(self, obs):
-        """
-        Thesis Section 3.4.4: Revised Multi-Objective Reward Function
-        """
-        # A. COMPLIANCE (Maximize)
-        compliances = obs[0:7]
-        avg_compliance = np.mean(compliances)
+        curr_compliance = obs[0:7] 
+        min_idx = np.argmin(curr_compliance)
+        min_compliance = curr_compliance[min_idx]
+        weakest_bgy = self.model.barangays[min_idx]
         
-        # Power function: 0.9 is WAY better than 0.5
-        r_compliance = (avg_compliance ** 2) * 10.0 
+        # --- REWARD ---
+        # 1. The Main Goal: Compliance
+        # High multiplier (500) to make success very valuable.
+        reward = min_compliance * 500.0 
+        
+        # 2. The "Nudge" (Not a Bribe)
+        # We give a small reward for allocation ONLY if compliance is zero.
+        # Once compliance starts moving (> 1%), this turns off.
+        # This forces the AI to transition from "Spending" to "Results".
+        if min_compliance < 0.01:
+             total_funds = sum(b.iec_fund + b.enf_fund + b.inc_fund for b in self.model.barangays)
+             if total_funds > 0:
+                 share = (weakest_bgy.iec_fund + weakest_bgy.enf_fund + weakest_bgy.inc_fund) / total_funds
+                 reward += (share * 10.0) # Small nudge (was 200.0)
+            
+        # Bankruptcy Penalty
+        if obs[14] <= 0.01: reward -= 5.0
 
-        # B. FAIL PENALTY (Disabled for training stability)
-        r_fail = 0.0
-
-        # C. BANKRUPTCY PENALTY
-        # Punish only if budget is effectively zero
-        budget_remaining = obs[7]
-        r_bankruptcy = 0.0
-        if budget_remaining <= 0.01:
-            r_bankruptcy = -5.0
-
-        # D. POLITICAL CAPITAL
-        pol_cap = obs[9]
-        r_pol_cap = 0.0
-        if pol_cap < 0.3:
-            r_pol_cap = -5.0
-
-        # TOTAL
-        total_reward = r_compliance + r_fail + r_bankruptcy + r_pol_cap
-        return float(total_reward)
-
+        return float(reward)
+    
     def render(self, mode='human'):
         if self.model:
             obs = self._get_observation()

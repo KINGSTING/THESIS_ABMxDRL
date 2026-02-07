@@ -46,32 +46,57 @@ class HouseholdAgent(mesa.Agent):
         compliant_count = sum(1 for n in household_neighbors if n.is_compliant)
         local_compliance_rate = compliant_count / len(household_neighbors)
         
-        # --- FIX 1: SLOW DOWN SOCIAL PRESSURE ---
-        # Old: 0.95 / 0.05 (Fast adaptation)
-        # New: 0.99 / 0.01 (Slow, sticky habits)
-        # This prevents the entire neighborhood from flipping overnight.
-        self.sn = (self.sn * 0.99) + (local_compliance_rate * 0.01)
+        # --- NEW LOGIC: AUTHORITY SIGNAL ---
+        # "If the government is strict, I assume the Social Norm is to comply."
+        authority_signal = 0.0
+        if self.barangay:
+            # If enforcement is high (e.g., 0.8), add a 0.10 boost to norms
+            authority_signal = self.barangay.enforcement_intensity * 0.10
+
+        # Combine Neighbor observation + Authority Signal
+        target_sn = local_compliance_rate + authority_signal
+        
+        # Cap at 1.0
+        target_sn = min(1.0, target_sn)
+
+        # Apply sticky update
+        self.sn = (self.sn * 0.99) + (target_sn * 0.01)
 
     def update_attitude(self):
         # 1. Natural Decay
-        self.attitude -= (self.attitude_decay_rate * 0.1) # Slow decay
+        self.attitude -= (self.attitude_decay_rate * 0.1) 
         
-        # 2. CALIBRATED GROWTH FIX (SNAIL MODE)
+        # 2. REALISTIC SYNERGY (The "Hammer and Megaphone")
         if self.barangay and hasattr(self.barangay, 'iec_intensity'):
-            intensity = self.barangay.iec_intensity
-            if intensity > 1.0: intensity /= 100.0
+            # A. Base Intensity (Quantity of Education)
+            iec_intensity = self.barangay.iec_intensity
+            if iec_intensity > 1.0: iec_intensity /= 100.0
             
-            # --- THE CRITICAL CHANGE ---
-            # Old: 0.025 (Massive)
-            # Previous Attempt: 0.002 (Still too fast)
-            # NEW: 0.0003 (Tiny nudge). 
-            # This means it takes ~1000 ticks of full IEC to gain 0.30 attitude.
-            boost = intensity * 0.025   
+            # --- REALITY CHECK: NO MAGIC THRESHOLD ---
+            # We remove the "if budget_share > 0.40" block.
+            # Instead, we define a base factor that is weak on its own.
+            base_factor = 0.025 
+
+            # --- THE SYNERGY: FEAR AMPLIFIES EDUCATION ---
+            # If Enforcement is high (0.8+), the impact of Education TRIPLES.
+            # This is "Signaling": People listen because they see the law is serious.
+            
+            enf_intensity = self.barangay.enforcement_intensity
+            
+            # Formula: 1.0 (Base) + up to 3.0 (Bonus from Cops)
+            # If Enf = 0 (Status Quo), multiplier is 1.0. 
+            # If Enf = 1.0 (AI Strategy), multiplier is 4.0.
+            synergy_multiplier = 1.0 + (enf_intensity * 3.0) 
+
+            # D. Final Calculation
+            # The AI must learn: "Don't just buy ads. Buy Cops to make the ads work."
+            boost = iec_intensity * base_factor * synergy_multiplier
+            
             self.attitude += boost
 
-        # 3. Enforcement Fatigue
+        # 3. Enforcement Fatigue (Minor pushback)
         if self.barangay and self.barangay.enforcement_intensity > 0.8:
-             self.attitude -= 0.002 # Reduced fatigue to match slower growth
+             self.attitude -= 0.002 
              
         self.attitude = max(0.0, min(1.0, self.attitude))
         
@@ -80,7 +105,9 @@ class HouseholdAgent(mesa.Agent):
         gamma = 1.5 if self.income_level == 1 else (1.0 if self.income_level == 2 else 0.8)
         fine = self.barangay.fine_amount if self.barangay else 0
         prob_detection = self.barangay.enforcement_intensity if self.barangay else 0
-        incentive = self.barangay.incentive_val if (self.barangay and not self.redeemed_this_quarter) else 0.0
+        # FIX: Remove "and not self.redeemed_this_quarter"
+        # The incentive value must persist in their mind for the whole quarter to sustain behavior.
+        incentive = self.barangay.incentive_val if self.barangay else 0.0
         
         # FIX: Add the fine avoidance to the impact
         monetary_impact = incentive + (fine * prob_detection)

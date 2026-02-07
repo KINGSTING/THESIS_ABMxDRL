@@ -1,1 +1,1 @@
-Quarter,Tick,Barangay_ID,Barangay_Name,Total_Allocation_PHP,IEC_Percent,Enforcement_Percent,Incentives_Percent,Compliance_Rate,Active_Enforcers
+Quarter,Tick,Barangay_ID,Barangay_Name,Total_Allocation_PHP,LGU_Allocation_PHP,LGU_Share_Percent,IEC_Percent,Enforcement_Percent,Incentives_Percent,Compliance_Rate,Active_Enforcers
