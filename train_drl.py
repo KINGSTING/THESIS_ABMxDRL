@@ -47,8 +47,8 @@ def main():
         tensorboard_log=log_dir,
         learning_rate=0.0003,
         gamma=0.99,
-        ent_coef=0.03, # Exploration
-        policy_kwargs=dict(net_arch=dict(pi=[64, 64], vf=[64, 64]))
+        ent_coef=0.02, # Low entropy so it commits to the strategy
+        policy_kwargs=dict(net_arch=dict(pi=[128, 128], vf=[128, 128]))
     )
 
     # 4. Setup Checkpoints (Auto-Save every 5,000 steps)
@@ -62,7 +62,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     # 6. Train
-    TIMESTEPS = 50000 
+    TIMESTEPS = 5000 
     print(f"Starting training for {TIMESTEPS} steps...")
     print("... You can press Ctrl+C at any time to safely stop and save ...")
     

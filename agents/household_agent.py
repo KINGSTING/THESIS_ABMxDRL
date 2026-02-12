@@ -63,38 +63,36 @@ class HouseholdAgent(mesa.Agent):
         self.sn = (self.sn * 0.99) + (target_sn * 0.01)
 
     def update_attitude(self):
-        # 1. Natural Decay
-        self.attitude -= (self.attitude_decay_rate * 0.1) 
+        # --- 1. THE SOCIAL NORM SHIELD (New Logic) ---
+        # "If everyone around me is doing it, I don't lose interest."
+        # This prevents the "Rot" that destroys compliant barangays during Maintenance Mode.
         
-        # 2. REALISTIC SYNERGY (The "Hammer and Megaphone")
+        decay_damper = 1.0
+        
+        # If Social Norm is strong (> 70%), decay is blocked by 90%.
+        if self.sn > 0.70:
+            decay_damper = 0.1 
+        # If Social Norm is moderate (> 50%), decay is slowed by 50%.
+        elif self.sn > 0.50:
+            decay_damper = 0.5
+            
+        # Apply the damped decay
+        self.attitude -= (self.attitude_decay_rate * 0.1 * decay_damper)
+        
+        # 2. REALISTIC SYNERGY (Keep your existing logic below)
         if self.barangay and hasattr(self.barangay, 'iec_intensity'):
-            # A. Base Intensity (Quantity of Education)
+            # ... (Rest of your existing synergy code) ...
             iec_intensity = self.barangay.iec_intensity
             if iec_intensity > 1.0: iec_intensity /= 100.0
             
-            # --- REALITY CHECK: NO MAGIC THRESHOLD ---
-            # We remove the "if budget_share > 0.40" block.
-            # Instead, we define a base factor that is weak on its own.
             base_factor = 0.025 
-
-            # --- THE SYNERGY: FEAR AMPLIFIES EDUCATION ---
-            # If Enforcement is high (0.8+), the impact of Education TRIPLES.
-            # This is "Signaling": People listen because they see the law is serious.
-            
             enf_intensity = self.barangay.enforcement_intensity
-            
-            # Formula: 1.0 (Base) + up to 3.0 (Bonus from Cops)
-            # If Enf = 0 (Status Quo), multiplier is 1.0. 
-            # If Enf = 1.0 (AI Strategy), multiplier is 4.0.
             synergy_multiplier = 1.0 + (enf_intensity * 3.0) 
 
-            # D. Final Calculation
-            # The AI must learn: "Don't just buy ads. Buy Cops to make the ads work."
             boost = iec_intensity * base_factor * synergy_multiplier
-            
             self.attitude += boost
 
-        # 3. Enforcement Fatigue (Minor pushback)
+        # 3. Enforcement Fatigue
         if self.barangay and self.barangay.enforcement_intensity > 0.8:
              self.attitude -= 0.002 
              
