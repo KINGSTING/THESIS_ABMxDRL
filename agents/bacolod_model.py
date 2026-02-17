@@ -328,113 +328,83 @@ class BacolodModel(mesa.Model):
     
     def apply_action(self, action_vector):
         """
-        Applies distribution with 'Target-Lock' Heuristic.
-        Constraint: 
-        1. HEURISTIC decides WHO (Lowest Compliance + Highest Density).
-        2. AI (PPO) decides HOW (The mix of IEC/Enf/Inc).
+        Applies distribution with 'Weighted Sustain' and 'Too Big To Fail' Logic.
         """
         
-        # === 1. GOLDEN TICKET (Training Only) ===
+        # === 1. GOLDEN TICKET (Training Helper) ===
         if self.train_mode and random.random() < 0.25:
+            # ... (Keep existing Golden Ticket logic) ...
             synthetic_vector = np.zeros(21)
-            synthetic_vector[7] = 100.0 
-            for i in range(21):
-                if i != 7: synthetic_vector[i] = 0.1
+            for i in range(21): synthetic_vector[i] = 0.05
+            focus = random.randint(0, 6)
+            synthetic_vector[focus*3:(focus*3)+3] = 10.0
             action_vector = synthetic_vector
 
         if len(action_vector) == 21:
-            
-            # === CRITICAL FIX: Target-Lock Heuristic ===
             if self.policy_mode == "ppo":
                 
-                # --- A. IDENTIFY PRIORITY TARGET (The "WHO") ---
-                # We find the single most critical barangay to focus on.
-                target_score = -1.0
+                solved_indices = []
+                max_gap = -1.0
                 priority_bgy_index = -1
-                total_pop = sum(b.n_households for b in self.barangays)
-                if total_pop == 0: total_pop = 1
-
+                
+                # A. IDENTIFY TARGETS
                 for i, bgy in enumerate(self.barangays):
                     compliance = bgy.get_local_compliance()
                     
-                    # 1. The Lock: If > 70%, it is "Solved", ignore it.
-                    if compliance > 0.70:
-                        gap = 0.0 
-                    else:
-                        gap = 1.0 - compliance
+                    # LOGIC: The "Latch"
+                    # We accept 0.70 as "Safe" to keep it in maintenance mode.
+                    threshold = 0.70
                     
-                    # 2. The Weight: Population Density
-                    weight = bgy.n_households / total_pop
-                    
-                    # 3. The Score
-                    score = gap * weight
-                    
-                    if score > target_score:
-                        target_score = score
+                    if compliance > threshold:
+                        solved_indices.append(i)
+                        continue 
+
+                    gap = 1.0 - compliance
+                    if gap > max_gap:
+                        max_gap = gap
                         priority_bgy_index = i
                 
-                # --- B. EXECUTE ALLOCATION (The "HOW") ---
-                # We respect the AI's "raw" output for the target, but amplify it.
-                # We do NOT overwrite the specific mix (IEC/Enf/Inc).
-                
+                # B. DISTRIBUTE FUNDS
                 for i, bgy in enumerate(self.barangays):
                     idx_start = i * 3
-                    compliance = bgy.get_local_compliance()
                     
-                    # CASE 1: MAINTENANCE (Solved Barangays)
-                    if compliance > 0.70:
-                        # Social Norm Shield is active. 
-                        # Low budget, balanced mix.
-                        action_vector[idx_start] = 0.1   
-                        action_vector[idx_start+1] = 0.1 
-                        action_vector[idx_start+2] = 0.1 
-
-                    # CASE 2: THE TARGET (The AI's Choice)
-                    elif i == priority_bgy_index:
-                        # This is the "Lowest Compliance + Highest Density" winner.
-                        # We AMPLIFY the AI's chosen mix for this barangay.
-                        # If AI predicted [0.1, 0.9, 0.1] (High Enf), we make it [10, 90, 10].
-                        # If AI predicted [0.8, 0.1, 0.1] (High IEC), we make it [80, 10, 10].
-                        
+                    if i == priority_bgy_index:
+                        # === ATTACK ===
                         multiplier = 100.0
-                        action_vector[idx_start] *= multiplier
-                        action_vector[idx_start+1] *= multiplier
-                        action_vector[idx_start+2] *= multiplier
-                    
-                    # CASE 3: THE QUEUE (Starvation)
+                        
+                    elif i in solved_indices:
+                        # === SUSTAIN ===
+                        # BUG FIX: Use 'i' (Index) or 'bgy.name' instead of 'unique_id'
+                        # Index 2 corresponds to Poblacion in your config list.
+                        
+                        if i == 2:  # <--- FIXED: integer comparison with index
+                             multiplier = 45.0  # Massive Defense (Allocates ~30% share)
+                        else:
+                             multiplier = 10.0  # Standard Defense
+                        
                     else:
-                        # Suppress these so the Target gets the budget share.
-                        action_vector[idx_start] *= 0.001
-                        action_vector[idx_start+1] *= 0.001
-                        action_vector[idx_start+2] *= 0.001
+                        # === QUEUE ===
+                        # "Too Big To Fail" Safety Net
+                        # If Poblacion slips below 0.70, give it emergency funds.
+                        if i == 2: # <--- FIXED
+                            multiplier = 15.0 
+                        else:
+                            multiplier = 0.01
 
-            # === END OF FIX ===
+                    action_vector[idx_start] *= multiplier
+                    action_vector[idx_start+1] *= multiplier
+                    action_vector[idx_start+2] *= multiplier
 
-            # B. CALCULATE SHARES (Standard Normalization)
+            # ... (Rest of normalization logic remains the same) ...
             total_desire = np.sum(action_vector)
-            
-            if total_desire <= 0.001: 
-                scale_factor = 0
-            else:
-                scale_factor = self.quarterly_budget / total_desire
+            if total_desire <= 0.001: scale_factor = 0
+            else: scale_factor = self.quarterly_budget / total_desire
 
-            # C. APPLY
             for i, bgy in enumerate(self.barangays):
                 idx = i * 3
-                raw_iec = action_vector[idx] * scale_factor
-                raw_enf = action_vector[idx+1] * scale_factor
-                raw_inc = action_vector[idx+2] * scale_factor
-                
-                bgy.update_policy(raw_iec, raw_enf, raw_inc)
+                bgy.update_policy(
+                    action_vector[idx] * scale_factor, 
+                    action_vector[idx+1] * scale_factor, 
+                    action_vector[idx+2] * scale_factor
+                )
                 self.adjust_enforcement_agents(bgy)
-
-        # ... (Keep fallback logic) ...
-        elif len(action_vector) >= 3:
-            total_desire = sum(action_vector)
-            scale_factor = (self.quarterly_budget / total_desire) if total_desire > 0 else 0
-            
-            if len(action_vector) == len(self.barangays):
-                 for i, bgy in enumerate(self.barangays):
-                     share = action_vector[i]
-                     bgy.update_policy(share * scale_factor, 0, 0)
-                     self.adjust_enforcement_agents(bgy)

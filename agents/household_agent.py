@@ -4,6 +4,7 @@ import random
 class HouseholdAgent(mesa.Agent):
     """
     Household Agent based on Theory of Planned Behavior (TPB).
+    Implements a 'Two-Stage Social Shield' based on 2020-2026 SWM Research.
     """
     def __init__(self, unique_id, model, income_level, initial_compliance, behavior_params=None):
         super().__init__(unique_id, model)
@@ -36,11 +37,11 @@ class HouseholdAgent(mesa.Agent):
 
     def update_social_norms(self):
         """
-        Updates Social Norms (SN).
-        FIX: ENFORCEMENT increases SN. 
-        High Enforcement -> Higher Perception of Norms.
+        Updates Social Norms (SN) with 'Two-Stage Shielding'.
+        - Stage 1 (>40%): The 'Bayanihan' Activation.
+        - Stage 2 (>70%): The 'Norm Lock-In' (80.3% effect).
         """
-        # 1. PEER INFLUENCE (The Drift)
+        # 1. CALCULATE RAW TARGET SN
         neighbors = self.model.grid.get_neighbors(self.pos, moore=True, radius=2)
         household_neighbors = [n for n in neighbors if isinstance(n, HouseholdAgent) and n.barangay_id == self.barangay_id]
         
@@ -50,41 +51,60 @@ class HouseholdAgent(mesa.Agent):
         else:
             local_compliance = 0.0
 
-        # 2. AUTHORITY INFLUENCE (The Boost)
-        # LOGIC: "Budget for Enforcement increases Social Norms"
-        # If Enforcement is maxed (1.0), we add a strong pressure (+0.50).
-        # This ensures that even if local compliance is 0%, high enforcement 
-        # pushes SN to 0.50, giving a fighting chance to flip the agent.
+        # Authority Boost (Enforcement creates perceived norm)
         authority_boost = 0.0
         if self.barangay:
             authority_boost = self.barangay.enforcement_intensity * 0.50
 
-        # Combine: Neighbors + Authority
-        # We cap at 1.0.
-        self.sn = min(1.0, local_compliance + authority_boost)
+        # The "Real" SN right now (Perception + Reality)
+        target_sn = min(1.0, local_compliance + authority_boost)
+
+        # 2. APPLY SHIELD (Inertia/Stickiness)
+        current_compliance = 0.0
+        if self.barangay:
+            current_compliance = self.barangay.compliance_rate
+
+        # LOGIC: "Damper the Decay"
+        if target_sn < self.sn: 
+            
+            if current_compliance > 0.70:
+                # STAGE 2: LOCK-IN (Keep this strong)
+                self.sn = (0.95 * self.sn) + (0.05 * target_sn)
+                
+            elif current_compliance > 0.40:
+                # STAGE 1: ACTIVATION 
+                # CHANGE THIS: 0.50 is too weak. Raise it to 0.85.
+                # This allows the agents to "slide" down to 40% rather than plummet.
+                self.sn = (0.85 * self.sn) + (0.15 * target_sn)
+                
+            else:
+                # NO SHIELD: Free Fall (Below 40%)
+                self.sn = target_sn
+        else:
+            # GROWTH MODE: Update instantly
+            self.sn = target_sn
 
     def update_attitude(self):
         """
-        Updates Attitude with Decay and Synergy.
-        FIX: The 'Social Norm Shield' now activates based on COMPLIANCE TIPPING POINT.
+        Updates Attitude with 'Two-Stage Shielding'.
         """
         # --- 1. THE SOCIAL NORM SHIELD ---
-        # "If compliance reaches the tipping point, the shield activates."
-        
         decay_damper = 1.0
         current_compliance = 0.0
         
-        # Get the OFFICIAL compliance rate from the Barangay Agent
         if self.barangay:
             current_compliance = self.barangay.compliance_rate
 
         # THE LOGIC CHECK:
         if current_compliance > 0.70:
-            # TIPPING POINT REACHED: The crowd sustains itself.
-            decay_damper = 0.1 # 90% reduction in decay
-        elif current_compliance > 0.50:
-            # Momentum Building
-            decay_damper = 0.5 
+            # STAGE 2: TIPPING POINT (Hard Shield)
+            # 95% reduction in decay.
+            decay_damper = 0.05 
+            
+        elif current_compliance > 0.40:
+            # STAGE 1: ACTIVATION (Soft Shield)
+            # 50% reduction in decay.
+            decay_damper = 0.50 
             
         # Apply the damped decay
         self.attitude -= (self.attitude_decay_rate * decay_damper)
@@ -101,10 +121,19 @@ class HouseholdAgent(mesa.Agent):
             boost = iec_intensity * base_factor * synergy_multiplier
             self.attitude += boost
 
-        # 3. Enforcement Fatigue
+        # 3. Enforcement Fatigue (CRITICAL FIX)
+        # OLD LOGIC: Drained attitude unless compliance was > 85%.
+        # RESULT: Agents in the 40%-85% range were getting drained to 0.0.
+        
         if self.barangay and self.barangay.enforcement_intensity > 0.8:
-             self.attitude -= 0.002 
-             
+             # NEW LOGIC: If we are in the "Safe Zone" (>40%), 
+             # residents view the enforcement as "Protective", not "Oppressive".
+             if self.barangay.compliance_rate > 0.40:
+                  self.attitude += 0.0005 # Small "Peace of Mind" Bonus
+             else:
+                  # Only get annoyed if the place is chaotic AND strict
+                  self.attitude -= 0.002 
+
         self.attitude = max(0.0, min(1.0, self.attitude))
         
     def make_decision(self):
@@ -148,7 +177,7 @@ class HouseholdAgent(mesa.Agent):
                     self.attitude += 0.02
 
     def step(self):
-        self.update_attitude()      # Check Shield (Compliance > 0.70?)
-        self.update_social_norms()  # Check Enforcement (Boost SN)
+        self.update_attitude()      # Check Shield (Attitude)
+        self.update_social_norms()  # Check Shield (Norms)
         self.make_decision()        # Calculate Utility
         self.attempt_redemption()
