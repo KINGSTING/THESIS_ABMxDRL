@@ -66,23 +66,24 @@ class HouseholdAgent(mesa.Agent):
 
         # LOGIC: "Damper the Decay"
         if target_sn < self.sn: 
-            
             if current_compliance > 0.70:
-                # STAGE 2: LOCK-IN (Keep this strong)
-                self.sn = (0.95 * self.sn) + (0.05 * target_sn)
+                # STAGE 2: LOCK-IN
+                # CHANGE: 0.95 is too strong. Lower to 0.90 to allow slight fluctuations.
+                self.sn = (0.90 * self.sn) + (0.10 * target_sn)
                 
             elif current_compliance > 0.40:
-                # STAGE 1: ACTIVATION 
-                # CHANGE THIS: 0.50 is too weak. Raise it to 0.85.
-                # This allows the agents to "slide" down to 40% rather than plummet.
+                # STAGE 1: ACTIVATION
                 self.sn = (0.85 * self.sn) + (0.15 * target_sn)
-                
             else:
-                # NO SHIELD: Free Fall (Below 40%)
                 self.sn = target_sn
         else:
-            # GROWTH MODE: Update instantly
+            # GROWTH MODE
             self.sn = target_sn
+            
+        # === NEW: REALISM CAP ===
+        # Social Norms rarely exceed 95% consensus in reality.
+        if self.sn > 0.95:
+             self.sn = 0.95
 
     def update_attitude(self):
         """
@@ -96,18 +97,20 @@ class HouseholdAgent(mesa.Agent):
             current_compliance = self.barangay.compliance_rate
 
         # THE LOGIC CHECK:
+        # --- EXISTING LOGIC START ---
         if current_compliance > 0.70:
-            # STAGE 2: TIPPING POINT (Hard Shield)
-            # 95% reduction in decay.
             decay_damper = 0.05 
-            
         elif current_compliance > 0.40:
-            # STAGE 1: ACTIVATION (Soft Shield)
-            # 50% reduction in decay.
             decay_damper = 0.50 
-            
-        # Apply the damped decay
+        
         self.attitude -= (self.attitude_decay_rate * decay_damper)
+        # --- EXISTING LOGIC END ---
+
+        # === NEW: REALISM CAP ===
+        # Prevent perfectly flat 100% lines.
+        # If attitude is too high (>0.95), force a small random drop (Entropy).
+        if self.attitude > 0.95:
+             self.attitude -= random.uniform(0.005, 0.02)
         
         # --- 2. IEC SYNERGY (Standard) ---
         if self.barangay and hasattr(self.barangay, 'iec_intensity'):
@@ -126,15 +129,25 @@ class HouseholdAgent(mesa.Agent):
         # RESULT: Agents in the 40%-85% range were getting drained to 0.0.
         
         if self.barangay and self.barangay.enforcement_intensity > 0.8:
-             # NEW LOGIC: If we are in the "Safe Zone" (>40%), 
-             # residents view the enforcement as "Protective", not "Oppressive".
              if self.barangay.compliance_rate > 0.40:
-                  self.attitude += 0.0005 # Small "Peace of Mind" Bonus
+                  # REDUCED BONUS: It was 0.0005, make it smaller to stop the infinite climb
+                  self.attitude += 0.0003 
              else:
-                  # Only get annoyed if the place is chaotic AND strict
                   self.attitude -= 0.002 
 
-        self.attitude = max(0.0, min(1.0, self.attitude))
+        # --- NEW: THE "PRIDE" FIX (Critical for Maintenance Mode) ---
+        # If the barangay is clean (>70%), residents feel good and maintain habits
+        # even if the police (enforcement_intensity) are not watching.
+        
+        if self.barangay and self.barangay.compliance_rate > 0.70:
+             # Calculate net decay based on this agent's profile
+             # For Demologan: 0.05 (decay) * 0.05 (damper) = 0.0025 loss/tick
+             # We need a boost slightly higher than 0.0025 to keep them stable.
+             
+             self.attitude += 0.003  # "Pride Bonus"
+
+        # Realism Cap
+        self.attitude = max(0.0, min(0.98, self.attitude))
         
     def make_decision(self):
         # 1. Net Cost
