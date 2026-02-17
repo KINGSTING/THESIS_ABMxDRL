@@ -328,11 +328,13 @@ class BacolodModel(mesa.Model):
     
     def apply_action(self, action_vector):
         """
-        Applies distribution.
-        FIX: Only applies 'King of the Hill' logic if mode is PPO.
+        Applies distribution with 'Target-Lock' Heuristic.
+        Constraint: 
+        1. HEURISTIC decides WHO (Lowest Compliance + Highest Density).
+        2. AI (PPO) decides HOW (The mix of IEC/Enf/Inc).
         """
         
-        # === 1. GOLDEN TICKET (Only for Training) ===
+        # === 1. GOLDEN TICKET (Training Only) ===
         if self.train_mode and random.random() < 0.25:
             synthetic_vector = np.zeros(21)
             synthetic_vector[7] = 100.0 
@@ -342,47 +344,73 @@ class BacolodModel(mesa.Model):
 
         if len(action_vector) == 21:
             
-            # === CRITICAL FIX: Only use Smart Logic for AI ===
+            # === CRITICAL FIX: Target-Lock Heuristic ===
             if self.policy_mode == "ppo":
                 
-                # --- IDENTIFY THE KING OF THE HILL ---
-                worst_compliance = 1.0
-                worst_bgy_index = -1
-                
+                # --- A. IDENTIFY PRIORITY TARGET (The "WHO") ---
+                # We find the single most critical barangay to focus on.
+                target_score = -1.0
+                priority_bgy_index = -1
+                total_pop = sum(b.n_households for b in self.barangays)
+                if total_pop == 0: total_pop = 1
+
                 for i, bgy in enumerate(self.barangays):
-                    comp = bgy.get_local_compliance()
-                    if comp < worst_compliance:
-                        worst_compliance = comp
-                        worst_bgy_index = i
+                    compliance = bgy.get_local_compliance()
+                    
+                    # 1. The Lock: If > 70%, it is "Solved", ignore it.
+                    if compliance > 0.70:
+                        gap = 0.0 
+                    else:
+                        gap = 1.0 - compliance
+                    
+                    # 2. The Weight: Population Density
+                    weight = bgy.n_households / total_pop
+                    
+                    # 3. The Score
+                    score = gap * weight
+                    
+                    if score > target_score:
+                        target_score = score
+                        priority_bgy_index = i
                 
-                # --- APPLY SMART LOGIC (Amplification) ---
+                # --- B. EXECUTE ALLOCATION (The "HOW") ---
+                # We respect the AI's "raw" output for the target, but amplify it.
+                # We do NOT overwrite the specific mix (IEC/Enf/Inc).
+                
                 for i, bgy in enumerate(self.barangays):
                     idx_start = i * 3
                     compliance = bgy.get_local_compliance()
                     
+                    # CASE 1: MAINTENANCE (Solved Barangays)
                     if compliance > 0.70:
-                        # Maintenance Mode
+                        # Social Norm Shield is active. 
+                        # Low budget, balanced mix.
                         action_vector[idx_start] = 0.1   
-                        action_vector[idx_start+1] = 0.2 
+                        action_vector[idx_start+1] = 0.1 
                         action_vector[idx_start+2] = 0.1 
+
+                    # CASE 2: THE TARGET (The AI's Choice)
+                    elif i == priority_bgy_index:
+                        # This is the "Lowest Compliance + Highest Density" winner.
+                        # We AMPLIFY the AI's chosen mix for this barangay.
+                        # If AI predicted [0.1, 0.9, 0.1] (High Enf), we make it [10, 90, 10].
+                        # If AI predicted [0.8, 0.1, 0.1] (High IEC), we make it [80, 10, 10].
+                        
+                        multiplier = 100.0
+                        action_vector[idx_start] *= multiplier
+                        action_vector[idx_start+1] *= multiplier
+                        action_vector[idx_start+2] *= multiplier
                     
-                    elif i == worst_bgy_index:
-                        # War Mode (King of the Hill)
-                        action_vector[idx_start] *= 100.0
-                        action_vector[idx_start+1] *= 100.0
-                        action_vector[idx_start+2] *= 100.0
-                    
+                    # CASE 3: THE QUEUE (Starvation)
                     else:
-                        # Waiting Room
-                        action_vector[idx_start] *= 0.1
-                        action_vector[idx_start+1] *= 0.1
-                        action_vector[idx_start+2] *= 0.1
+                        # Suppress these so the Target gets the budget share.
+                        action_vector[idx_start] *= 0.001
+                        action_vector[idx_start+1] *= 0.001
+                        action_vector[idx_start+2] *= 0.001
 
             # === END OF FIX ===
-            # If policy_mode is NOT "ppo" (e.g. Status Quo), 
-            # it skips the block above and uses the vector exactly as given.
 
-            # B. CALCULATE SHARES
+            # B. CALCULATE SHARES (Standard Normalization)
             total_desire = np.sum(action_vector)
             
             if total_desire <= 0.001: 
