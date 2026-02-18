@@ -56,8 +56,13 @@ class HouseholdAgent(mesa.Agent):
         if self.barangay:
             authority_boost = self.barangay.enforcement_intensity * 0.50
 
-        # The "Real" SN right now (Perception + Reality)
-        target_sn = min(1.0, local_compliance + authority_boost)
+        # === FIX 1: THE PERCEPTION CAP ===
+        # OLD: target_sn = min(1.0, local_compliance + authority_boost)
+        # NEW: Humans never perceive 100% perfection. Cap it at 0.92.
+        # This ensures the 'target' they chase is always slightly out of reach.
+        
+        perceived_reality = min(0.92, local_compliance + authority_boost)
+        target_sn = perceived_reality
 
         # 2. APPLY SHIELD (Inertia/Stickiness)
         current_compliance = 0.0
@@ -124,30 +129,31 @@ class HouseholdAgent(mesa.Agent):
             boost = iec_intensity * base_factor * synergy_multiplier
             self.attitude += boost
 
-        # 3. Enforcement Fatigue (CRITICAL FIX)
-        # OLD LOGIC: Drained attitude unless compliance was > 85%.
-        # RESULT: Agents in the 40%-85% range were getting drained to 0.0.
-        
+        # --- EXISTING FATIGUE LOGIC ---
         if self.barangay and self.barangay.enforcement_intensity > 0.8:
              if self.barangay.compliance_rate > 0.40:
-                  # REDUCED BONUS: It was 0.0005, make it smaller to stop the infinite climb
-                  self.attitude += 0.0003 
+                  # REDUCED: Lower the peace bonus slightly
+                  self.attitude += 0.0001 
              else:
                   self.attitude -= 0.002 
-
-        # --- NEW: THE "PRIDE" FIX (Critical for Maintenance Mode) ---
-        # If the barangay is clean (>70%), residents feel good and maintain habits
-        # even if the police (enforcement_intensity) are not watching.
         
+        # --- REVISED: PRIDE & COMPLACENCY ---
         if self.barangay and self.barangay.compliance_rate > 0.70:
-             # Calculate net decay based on this agent's profile
-             # For Demologan: 0.05 (decay) * 0.05 (damper) = 0.0025 loss/tick
-             # We need a boost slightly higher than 0.0025 to keep them stable.
              
-             self.attitude += 0.003  # "Pride Bonus"
+             # 1. THE PRIDE BONUS (Only works if you aren't perfect yet)
+             # Stop giving the bonus if they are already > 0.95
+             if self.attitude < 0.80:
+                 self.attitude += 0.003  
+             
+             # 2. THE COMPLACENCY TAX (The "Realism" Fix)
+             # If the barangay is perfect (>0.96), people get lazy.
+             # We apply a penalty that IGNORES the shield.
+             if self.attitude > 0.90:
+                 self.attitude -= random.uniform(0.005, 0.015)
 
-        # Realism Cap
-        self.attitude = max(0.0, min(0.98, self.attitude))
+        # --- FINAL CAP ---
+        # Cap at 0.99 to mathematically prevent 1.0 floats
+        self.attitude = max(0.0, min(0.95, self.attitude))
         
     def make_decision(self):
         # 1. Net Cost
@@ -170,6 +176,13 @@ class HouseholdAgent(mesa.Agent):
 
         # 3. Decision
         self.is_compliant = (self.utility > 0.0)
+        
+        # === FIX 3: HUMAN ERROR (The 1% Rule) ===
+        # Even if Utility says "Yes", there is a 1% chance they mess up.
+        # This guarantees the global graph can NEVER actally hit 100%.
+        
+        if self.is_compliant and random.random() < 0.01:
+             self.is_compliant = False
 
     def get_fined(self):
         self.utility -= 0.5 
