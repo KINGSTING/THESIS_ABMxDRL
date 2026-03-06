@@ -7,6 +7,7 @@
 ANNUAL_BUDGET = 1500000   # Updated from 1.1M to 1.5M based on MENRO Interview
 QUARTERLY_BUDGET = 375000 # 1.5M / 4
 MIN_WAGE = 400            # Daily minimum wage reference (Region X)
+WORKING_DAYS = 66
 
 # =============================================================================
 #  INCOME PROFILES (Calibrated from Appendix B Interviews)

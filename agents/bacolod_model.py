@@ -19,7 +19,7 @@ def compute_global_compliance(model):
     return sum(1 for a in agents if a.is_compliant) / len(agents)
 
 class BacolodModel(mesa.Model):
-    def __init__(self, seed=None, train_mode=False, policy_mode="ppo", behavior_override=None): 
+    def __init__(self, seed=None, train_mode=False, policy_mode="HuDRL", behavior_override=None): 
         if seed is not None:
             super().__init__(seed=seed)
             self._seed = seed
@@ -61,8 +61,8 @@ class BacolodModel(mesa.Model):
                     "Compliance_Rate", "Active_Enforcers", "Political_Capital"
                 ])
 
-        if not self.train_mode and self.policy_mode == "ppo" and not self.behavior_override:
-            model_path = "models/PPO/bacolod_ppo_final.zip"
+        if not self.train_mode and self.policy_mode == "HuDRL" and not self.behavior_override:
+            model_path = "models/ppo/bacolod_ppo_final.zip"
             if os.path.exists(model_path):
                 print(f"Loading Trained Agent from {model_path}...")
                 self.rl_agent = PPO.load(model_path)
@@ -169,35 +169,31 @@ class BacolodModel(mesa.Model):
         self.current_budget = self.current_budget - daily_fixed_cost + self.recent_fines_collected
         self.recent_fines_collected = 0
 
-    def adjust_enforcement_agents(self, barangay):
-        potential_enforcers = barangay.enf_fund / barangay.enforcer_salary_cost
-        num_guaranteed = int(potential_enforcers) 
-        remainder_prob = potential_enforcers - num_guaranteed 
-        extra_agent = 1 if self.random.random() < remainder_prob else 0
-        target_count = num_guaranteed + extra_agent
-
-        current_enforcers = [a for a in self.schedule.agents 
-                             if isinstance(a, EnforcementAgent) 
-                             and a.barangay_id == barangay.unique_id]
-        current_count = len(current_enforcers)
-
+    def adjust_enforcement_agents(self, barangay_agent):
+        """Syncs the physical agents in the grid with the budget-derived n_enforcers"""
+        # 1. Count existing enforcers for this barangay
+        existing_agents = [a for a in self.schedule.agents 
+                        if isinstance(a, EnforcementAgent) and a.barangay_id == barangay_agent.unique_id]
+        
+        current_count = len(existing_agents)
+        target_count = barangay_agent.n_enforcers # Derived from Eq 3.1
+        
+        # 2. Add if under-budgeted
         if current_count < target_count:
-            diff = target_count - current_count
-            for _ in range(diff):
-                safe_id = self.next_id() + 1000000
-                a = EnforcementAgent(safe_id, self, barangay.unique_id)
-                self.schedule.add(a)
-                x = self.random.randrange(self.grid_width)
-                y = self.random.randrange(self.grid_height)
-                self.grid.place_agent(a, (x, y))
+            for i in range(target_count - current_count):
+                new_id = f"Enf_{barangay_agent.unique_id}_{self.tick}_{i}"
+                # Spawn at a random location
+                pos = (self.random.randrange(self.grid.width), self.random.randrange(self.grid.height))
+                agent = EnforcementAgent(new_id, self, barangay_agent.unique_id)
+                self.schedule.add(agent)
+                self.grid.place_agent(agent, pos)
+                
+        # 3. Remove if budget was cut
         elif current_count > target_count:
-            diff = current_count - target_count
-            for i in range(diff):
-                agent_to_remove = current_enforcers[i]
+            for i in range(current_count - target_count):
+                agent_to_remove = existing_agents[i]
                 self.grid.remove_agent(agent_to_remove)
                 self.schedule.remove(agent_to_remove)
-        
-        barangay.active_enforcers_count = target_count
 
     def log_quarterly_report(self, quarter):
         if self.behavior_override: return
@@ -252,8 +248,8 @@ class BacolodModel(mesa.Model):
         if not self.behavior_override: 
             print(f"\n--- Quarter {current_quarter} Decision Point ({self.policy_mode.upper()}) ---")
 
-        # 1. AI MODE (PPO)
-        if self.policy_mode == "ppo" and self.rl_agent is not None:
+        # 1. AI MODE (HuDRL)
+        if self.policy_mode == "HuDRL" and self.rl_agent is not None:
             current_state = self.get_state()
             raw_action, _ = self.rl_agent.predict(current_state, deterministic=True)
             exps = np.exp(raw_action - np.max(raw_action))
@@ -264,8 +260,6 @@ class BacolodModel(mesa.Model):
         else:
             action = []
             
-            # === CHANGED: REMOVED POPULATION CALCULATION ===
-            # We no longer calculate total_hh. 
             
             for b in self.barangays:
                 # === NEW LOGIC: EQUAL DISTRIBUTION ===
@@ -341,7 +335,7 @@ class BacolodModel(mesa.Model):
             action_vector = synthetic_vector
 
         if len(action_vector) == 21:
-            if self.policy_mode == "ppo":
+            if self.policy_mode == "HuDRL":
                 
                 solved_indices = []
                 max_gap = -1.0

@@ -20,15 +20,32 @@ class EnforcementAgent(mesa.Agent):
         return math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
     def step(self):
-        # 1. MARK VISITED (Keep existing logic)
-        nearby_agents = self.model.grid.get_neighbors(self.pos, moore=True, radius=1, include_center=True)
-        for agent in nearby_agents:
-            if isinstance(agent, HouseholdAgent):
+        households_checked_today = 0
+        MAX_DAILY_CAPACITY = 30
+        
+        # 1. MARK VISITED & PROCESS ENFORCEMENT
+        # We combine the scan and enforce loops so we don't exceed the 30-household limit.
+        catch_zone = self.model.grid.get_neighbors(self.pos, moore=True, radius=1, include_center=True)
+        local_households = [a for a in catch_zone if isinstance(a, HouseholdAgent)]
+        
+        for agent in local_households:
+            if households_checked_today >= MAX_DAILY_CAPACITY:
+                break # Enforcer has reached physical limit for the day
+                
+            # Process household if not visited yet
+            if agent.unique_id not in self.visited_households:
                 self.visited_households.add(agent.unique_id)
-
-        # 2. DETERMINE MOVEMENT (The "Separate Patrol" Fix)
-        # Scan only local area (radius 10) instead of global map.
-        # This ensures Agent A sees targets in the North, and Agent B sees targets in the South.
+                households_checked_today += 1
+                
+                # Check compliance and issue fine
+                if not agent.is_compliant:
+                    if hasattr(agent, 'get_fined'):
+                        agent.get_fined()
+                    else:
+                        agent.utility -= 0.5
+        
+        # 2. DETERMINE MOVEMENT 
+        # Scan local area (radius 10) for unvisited targets
         local_scan = self.model.grid.get_neighbors(self.pos, moore=True, radius=10, include_center=False)
         
         visible_targets = [
@@ -42,13 +59,12 @@ class EnforcementAgent(mesa.Agent):
         possible_steps = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
 
         if visible_targets:
-            # CHASE MODE: If I see a unvisited house nearby, go to it
+            # CHASE MODE: Move towards closest unvisited target
             target_household = min(visible_targets, key=lambda h: self.get_distance(self.pos, h.pos))
             if possible_steps:
                 next_position = min(possible_steps, key=lambda p: self.get_distance(p, target_household.pos))
         else:
-            # PATROL MODE: If I see nothing, move RANDOMLY
-            # This is crucial. It keeps agents spread out covering different streets.
+            # PATROL MODE: Move randomly if no targets are visible
             if possible_steps:
                 next_position = self.random.choice(possible_steps)
 

@@ -71,7 +71,7 @@ if __name__ == "__main__":
     plt.axhline(y=0.40, color='orange', linestyle=':', alpha=0.5, label='Collapse Zone (40%)')
 
     # Formatting
-    plt.title('Comparison of Non-Hueristic & Hueristic Approach', fontsize=14)
+    plt.title('Comparison of Non-Heuristic & Heuristic Approach', fontsize=14)
     plt.xlabel('Quarter', fontsize=12)
     plt.ylabel('Global Compliance Rate', fontsize=12)
     plt.xticks(quarters)

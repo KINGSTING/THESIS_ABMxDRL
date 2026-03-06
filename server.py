@@ -194,7 +194,7 @@ model_params = {
     "policy_mode": Choice(
         name="LGU Policy Strategy",  
         value="status_quo",      
-        choices=["status_quo", "pure_incentives", "pure_enforcement", "ppo"]
+        choices=["status_quo", "pure_incentives", "pure_enforcement", "HuDRL"]
     )
 }
 
