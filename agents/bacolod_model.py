@@ -12,6 +12,7 @@ import barangay_config as config
 from agents.household_agent import HouseholdAgent
 from agents.barangay_agent import BarangayAgent
 from agents.enforcement_agent import EnforcementAgent
+from agents.mayor_agent import MayorAgent # <--- NEW IMPORT
 
 def compute_global_compliance(model):
     agents = [a for a in model.schedule.agents if isinstance(a, HouseholdAgent)]
@@ -89,8 +90,10 @@ class BacolodModel(mesa.Model):
         self.alpha_sensitivity = 0.05    
         self.beta_recovery = 0.02        
 
+        # --- FAST MATH DECLARATIONS ---
         self.barangays = []
         self.agent_id_counter = 0 
+        self.households_by_bgy = {} # <--- The Dictionary Fix 
         
         # --- INITIALIZE BARANGAYS ---
         for i, b_conf in enumerate(config.BARANGAY_LIST):
@@ -130,6 +133,13 @@ class BacolodModel(mesa.Model):
                     initial_compliance=is_compliant,
                     behavior_params=behavior_data 
                 )
+                
+                # --- FAST MATH DICTIONARY POPULATION ---
+                if b_agent.unique_id not in self.households_by_bgy:
+                    self.households_by_bgy[b_agent.unique_id] = []
+                self.households_by_bgy[b_agent.unique_id].append(a)
+                # ---------------------------------------
+
                 self.agent_id_counter += 1
                 a.barangay = b_agent
                 a.barangay_id = b_agent.unique_id
@@ -137,20 +147,28 @@ class BacolodModel(mesa.Model):
                 self.schedule.add(a)
                 self.grid.place_agent(a, (x, y))
 
-        # --- INITIAL DECISION ---
-        self.run_decision_logic() 
+        # --- INITIALIZE MAYOR AGENT (DRL Executive) ---
+        self.mayor = MayorAgent("MAYOR_0", self, self.quarterly_budget)
+        self.schedule.add(self.mayor)
 
-        reporters = {
-            "Global Compliance": compute_global_compliance,
-            "Total Fines": lambda m: m.total_fines_collected,
-            "Political Capital": lambda m: m.political_capital
-        }
-        
-        for bgy in self.barangays:
-             reporters[bgy.name] = lambda m, b=bgy: b.get_local_compliance()
+        # Trigger initial Day 0 Deployment
+        self.mayor.run_decision_logic() 
 
-        self.datacollector = DataCollector(model_reporters=reporters)
-        self.datacollector.collect(self)
+        # --- SILENCE DATA COLLECTOR DURING TRAINING ---
+        if not self.train_mode:
+            reporters = {
+                "Global Compliance": compute_global_compliance,
+                "Total Fines": lambda m: m.total_fines_collected,
+                "Political Capital": lambda m: m.political_capital
+            }
+            
+            for bgy in self.barangays:
+                 reporters[bgy.name] = lambda m, b=bgy: b.get_local_compliance()
+
+            self.datacollector = DataCollector(model_reporters=reporters)
+            self.datacollector.collect(self)
+        else:
+            self.datacollector = None
 
     def update_political_capital(self):
         avg_enforcement = 0
@@ -170,25 +188,24 @@ class BacolodModel(mesa.Model):
         self.recent_fines_collected = 0
 
     def adjust_enforcement_agents(self, barangay_agent):
-        """Syncs the physical agents in the grid with the budget-derived n_enforcers"""
-        # 1. Count existing enforcers for this barangay
+        """Syncs the LOCAL BARANGAY TANODS with the local barangay budget."""
+        # Note: We filter out Municipal Inspectors so the Barangay only manages its own Tanods
         existing_agents = [a for a in self.schedule.agents 
-                        if isinstance(a, EnforcementAgent) and a.barangay_id == barangay_agent.unique_id]
+                        if isinstance(a, EnforcementAgent) 
+                        and a.barangay_id == barangay_agent.unique_id
+                        and not getattr(a, 'is_municipal', False)]
         
         current_count = len(existing_agents)
-        target_count = barangay_agent.n_enforcers # Derived from Eq 3.1
+        target_count = barangay_agent.n_enforcers # Derived from Barangay's local enf_fund
         
-        # 2. Add if under-budgeted
         if current_count < target_count:
             for i in range(target_count - current_count):
-                new_id = f"Enf_{barangay_agent.unique_id}_{self.tick}_{i}"
-                # Spawn at a random location
+                new_id = f"Tanod_{barangay_agent.unique_id}_{self.tick}_{i}"
                 pos = (self.random.randrange(self.grid.width), self.random.randrange(self.grid.height))
                 agent = EnforcementAgent(new_id, self, barangay_agent.unique_id)
                 self.schedule.add(agent)
                 self.grid.place_agent(agent, pos)
                 
-        # 3. Remove if budget was cut
         elif current_count > target_count:
             for i in range(current_count - target_count):
                 agent_to_remove = existing_agents[i]
@@ -201,17 +218,27 @@ class BacolodModel(mesa.Model):
         with open(self.log_filename, mode='a', newline='') as file:
             writer = csv.writer(file)
             for b in self.barangays:
-                total_funds = b.iec_fund + b.enf_fund + b.inc_fund
+                
+                # Fetch dynamically assigned LGU funds (assigned by MayorAgent)
+                lgu_iec = getattr(b, 'lgu_iec_fund', 0)
+                lgu_enf = getattr(b, 'lgu_enf_fund', 0)
+                lgu_inc = getattr(b, 'lgu_incentive_fund', 0)
+                lgu_allocation = lgu_iec + lgu_enf + lgu_inc
+                
+                # Total Combines Local Base + LGU Intervention
+                total_iec = b.iec_fund + lgu_iec
+                total_enf = b.enf_fund + lgu_enf
+                total_inc = b.inc_fund + lgu_inc
+                total_funds = total_iec + total_enf + total_inc
                 local_base = b.local_quarterly_budget
-                lgu_allocation = max(0, total_funds - local_base)
                 
                 lgu_share_pct = 0.0
                 if self.quarterly_budget > 0:
                     lgu_share_pct = (lgu_allocation / self.quarterly_budget) * 100
 
-                iec_pct = (b.iec_fund / total_funds * 100) if total_funds > 0 else 0
-                enf_pct = (b.enf_fund / total_funds * 100) if total_funds > 0 else 0
-                inc_pct = (b.inc_fund / total_funds * 100) if total_funds > 0 else 0
+                iec_pct = (total_iec / total_funds * 100) if total_funds > 0 else 0
+                enf_pct = (total_enf / total_funds * 100) if total_funds > 0 else 0
+                inc_pct = (total_inc / total_funds * 100) if total_funds > 0 else 0
 
                 households = [a for a in self.schedule.agents 
                               if isinstance(a, HouseholdAgent) and a.barangay_id == b.unique_id]
@@ -232,84 +259,63 @@ class BacolodModel(mesa.Model):
                     quarter, self.schedule.steps, 
                     b.unique_id, b.name,
                     f"{total_funds:.2f}", f"{lgu_allocation:.2f}", f"{lgu_share_pct:.2f}%", f"{local_base:.2f}",
-                    f"{b.iec_fund:.2f}", f"{iec_pct:.1f}%",
-                    f"{b.enf_fund:.2f}", f"{enf_pct:.1f}%",
-                    f"{b.inc_fund:.2f}", f"{inc_pct:.1f}%",
+                    f"{total_iec:.2f}", f"{iec_pct:.1f}%",
+                    f"{total_enf:.2f}", f"{enf_pct:.1f}%",
+                    f"{total_inc:.2f}", f"{inc_pct:.1f}%",
                     f"{b.iec_intensity:.4f}", f"{b.enforcement_intensity:.4f}", f"{b.incentive_val:.2f}",
                     f"{avg_att:.3f}", f"{avg_sn:.3f}", f"{avg_pbc:.3f}", f"{avg_util:.3f}",
                     f"{b.get_local_compliance():.2%}", active_enforcers, f"{self.political_capital:.4f}"
                 ])
         print(f" > Detailed Report for Quarter {quarter} saved to {self.log_filename}")
 
-    def run_decision_logic(self):
-        if self.train_mode: return 
-
-        current_quarter = (self.schedule.steps // 90) + 1
-        if not self.behavior_override: 
-            print(f"\n--- Quarter {current_quarter} Decision Point ({self.policy_mode.upper()}) ---")
-
-        # 1. AI MODE (HuDRL)
-        if self.policy_mode == "HuDRL" and self.rl_agent is not None:
-            current_state = self.get_state()
-            raw_action, _ = self.rl_agent.predict(current_state, deterministic=True)
-            exps = np.exp(raw_action - np.max(raw_action))
-            action = exps / np.sum(exps)
-            self.apply_action(action)
-            
-        # 2. MANUAL STRATEGIES (Status Quo, Pure Enf, Pure Inc)
-        else:
-            action = []
-            
-            
-            for b in self.barangays:
-                # === NEW LOGIC: EQUAL DISTRIBUTION ===
-                # By giving everyone a weight of 1.0, the total weight becomes 7.
-                # The apply_action function calculates: (1.0 / 7.0) * Budget = Equal Share.
-                share = 1.0 
-                
-                if self.policy_mode == "pure_enforcement":
-                    # [IEC, ENF, INC] -> All to Enforcement (Index 1)
-                    action.extend([0.0, share, 0.0])
-                    
-                elif self.policy_mode == "pure_incentives":
-                    # [IEC, ENF, INC] -> All to Incentives (Index 2)
-                    action.extend([0.0, 0.0, share])
-                    
-                else: 
-                    # Default: "status_quo" -> All to IEC (Index 0)
-                    action.extend([share, 0.0, 0.0])
-            
-            self.apply_action(action)
-
-        self.log_quarterly_report(current_quarter)
-
     def step(self):
         self.tick += 1
+        
+        # --- 1. QUARTERLY RESET (Every 90 Days) ---
         if self.tick % 90 == 0:
             self.quarter += 1
-            if not self.behavior_override:
-                print(f" >> New Quarter: {self.quarter}")
+            # Reset 'redeemed' flags for all household agents
             for a in self.schedule.agents:
                 if isinstance(a, HouseholdAgent):
                     a.redeemed_this_quarter = False
+            
+            # This block was likely empty or mis-indented before
+            if not self.train_mode and not self.behavior_override:
+                print(f" >> New Quarter: {self.quarter}")
 
-        if self.schedule.steps % 90 == 0:
-            self.run_decision_logic()
+        # --- 2. OPTIMIZED AGENT STEPPING ---
+        for b in self.barangays: 
+            b.step()
+            
+        for a in self.schedule.agents:
+            if isinstance(a, (HouseholdAgent, EnforcementAgent, MayorAgent)):
+                a.step()
 
-        for b in self.barangays: b.step()
-        self.schedule.step()
+        # --- 3. ECONOMICS & POLITICS ---
         self.update_political_capital() 
         self.calculate_costs()
-        self.datacollector.collect(self)
-        
-        if self.schedule.steps >= 1080: self.running = False
+
+        # --- 4. DATA COLLECTION ---
+        # The indentation here is crucial. 
+        # During training, we skip collection to increase speed.
+        if not self.train_mode:
+            self.datacollector.collect(self)
+        else:
+            pass # Explicitly do nothing if training
+
+        # --- 5. STOP CONDITIONS ---
+        if self.tick >= 1080: 
+            self.running = False
+            
+        if self.political_capital < 0.10:
+            self.running = False
 
     def get_state(self):
         compliance_rates = [b.get_local_compliance() for b in self.barangays]
         attitude_rates = []
         for b in self.barangays:
-            households = [a for a in self.schedule.agents 
-                          if isinstance(a, HouseholdAgent) and a.barangay_id == b.unique_id]
+            # --- FASTER DICTIONARY LOOKUP ---
+            households = self.households_by_bgy.get(b.unique_id, [])
             avg_att = np.mean([a.attitude for a in households]) if households else 0.0
             attitude_rates.append(avg_att)
 
@@ -319,86 +325,3 @@ class BacolodModel(mesa.Model):
         
         state = compliance_rates + attitude_rates + [norm_budget, norm_time, p_cap]
         return np.array(state, dtype=np.float32)
-    
-    def apply_action(self, action_vector):
-        """
-        Applies distribution with 'Weighted Sustain' and 'Too Big To Fail' Logic.
-        """
-        
-        # === 1. GOLDEN TICKET (Training Helper) ===
-        if self.train_mode and random.random() < 0.25:
-            # ... (Keep existing Golden Ticket logic) ...
-            synthetic_vector = np.zeros(21)
-            for i in range(21): synthetic_vector[i] = 0.05
-            focus = random.randint(0, 6)
-            synthetic_vector[focus*3:(focus*3)+3] = 10.0
-            action_vector = synthetic_vector
-
-        if len(action_vector) == 21:
-            if self.policy_mode == "HuDRL":
-                
-                solved_indices = []
-                max_gap = -1.0
-                priority_bgy_index = -1
-                
-                # A. IDENTIFY TARGETS
-                for i, bgy in enumerate(self.barangays):
-                    compliance = bgy.get_local_compliance()
-                    
-                    # LOGIC: The "Latch"
-                    # We accept 0.70 as "Safe" to keep it in maintenance mode.
-                    threshold = 0.70
-                    
-                    if compliance > threshold:
-                        solved_indices.append(i)
-                        continue 
-
-                    gap = 1.0 - compliance
-                    if gap > max_gap:
-                        max_gap = gap
-                        priority_bgy_index = i
-                
-                # B. DISTRIBUTE FUNDS
-                for i, bgy in enumerate(self.barangays):
-                    idx_start = i * 3
-                    
-                    if i == priority_bgy_index:
-                        # === ATTACK ===
-                        multiplier = 100.0
-                        
-                    elif i in solved_indices:
-                        # === SUSTAIN ===
-                        # BUG FIX: Use 'i' (Index) or 'bgy.name' instead of 'unique_id'
-                        # Index 2 corresponds to Poblacion in your config list.
-                        
-                        if i == 2:  # <--- FIXED: integer comparison with index
-                             multiplier = 45.0  # Massive Defense (Allocates ~30% share)
-                        else:
-                             multiplier = 10.0  # Standard Defense
-                        
-                    else:
-                        # === QUEUE ===
-                        # "Too Big To Fail" Safety Net
-                        # If Poblacion slips below 0.70, give it emergency funds.
-                        if i == 2: # <--- FIXED
-                            multiplier = 15.0 
-                        else:
-                            multiplier = 0.01
-
-                    action_vector[idx_start] *= multiplier
-                    action_vector[idx_start+1] *= multiplier
-                    action_vector[idx_start+2] *= multiplier
-
-            # ... (Rest of normalization logic remains the same) ...
-            total_desire = np.sum(action_vector)
-            if total_desire <= 0.001: scale_factor = 0
-            else: scale_factor = self.quarterly_budget / total_desire
-
-            for i, bgy in enumerate(self.barangays):
-                idx = i * 3
-                bgy.update_policy(
-                    action_vector[idx] * scale_factor, 
-                    action_vector[idx+1] * scale_factor, 
-                    action_vector[idx+2] * scale_factor
-                )
-                self.adjust_enforcement_agents(bgy)

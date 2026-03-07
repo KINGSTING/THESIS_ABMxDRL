@@ -1,7 +1,6 @@
 import mesa
 from mesa.visualization.modules import CanvasGrid, ChartModule, TextElement
 from mesa.visualization.ModularVisualization import ModularServer
-# 1. IMPORT CHOICE FOR THE DROPDOWN MENU
 from mesa.visualization.UserParam import Choice
 
 # Import your custom agents and model
@@ -33,10 +32,22 @@ def make_barangay_portrayal(barangay_target_id):
         elif agent_class == "EnforcementAgent":
             portrayal["Shape"] = "rect"
             portrayal["Filled"] = "true"
-            portrayal["w"] = 0.8  
-            portrayal["h"] = 0.8
             portrayal["Layer"] = 1
-            portrayal["Color"] = "blue"
+            
+            # --- VISUAL MULTI-LAYERED GOVERNANCE ---
+            # Distinguish between LGU Inspectors and Local Tanods
+            if getattr(agent, "is_municipal", False):
+                portrayal["w"] = 0.9  # LGU Inspectors are larger
+                portrayal["h"] = 0.9
+                portrayal["Color"] = "purple" # LGU Color
+                portrayal["text"] = "M"       # 'M' for Municipal
+                portrayal["text_color"] = "white"
+            else:
+                portrayal["w"] = 0.7  # Tanods are standard size
+                portrayal["h"] = 0.7
+                portrayal["Color"] = "blue"   # Local Color
+                portrayal["text"] = "T"       # 'T' for Tanod
+                portrayal["text_color"] = "white"
             
         elif agent_class == "BarangayAgent":
             portrayal["Shape"] = "circle"
@@ -169,15 +180,14 @@ for i in range(7):
     visual_elements.append(grid)
 
 # B. Compliance Chart
-# FIX: Labels must match "name" in barangay_config.py EXACTLY
 barangay_chart_data = [
-    {"Label": "Brgy Poblacion",    "Color": "red"},     # Was "Poblacion"
-    {"Label": "Brgy Liangan East", "Color": "orange"},  # Was "Liangan East"
-    {"Label": "Brgy Ezperanza",    "Color": "gold"},    # Was "Ezperanza"
-    {"Label": "Brgy Binuni",       "Color": "green"},   # Was "Binuni"
-    {"Label": "Brgy Babalaya",     "Color": "cyan"},    # Was "Babalaya"
-    {"Label": "Brgy Mati",         "Color": "blue"},    # Was "Mati"
-    {"Label": "Brgy Demologan",    "Color": "purple"}   # Was "Demologan"
+    {"Label": "Brgy Poblacion",    "Color": "red"},     
+    {"Label": "Brgy Liangan East", "Color": "orange"},  
+    {"Label": "Brgy Ezperanza",    "Color": "gold"},    
+    {"Label": "Brgy Binuni",       "Color": "green"},   
+    {"Label": "Brgy Babalaya",     "Color": "cyan"},    
+    {"Label": "Brgy Mati",         "Color": "blue"},    
+    {"Label": "Brgy Demologan",    "Color": "purple"}   
 ]
 
 chart_compliance = ChartModule(
@@ -190,18 +200,17 @@ visual_elements.append(chart_compliance)
 model_params = {
     "seed": 42,
     "train_mode": False,
-    # THIS IS THE POLICY UI YOU WANTED:
     "policy_mode": Choice(
         name="LGU Policy Strategy",  
         value="status_quo",      
-        choices=["status_quo", "pure_incentives", "pure_enforcement", "HuDRL"]
+        choices=["NO_LGU", "status_quo", "pure_incentives", "pure_enforcement", "HuDRL"]
     )
 }
 
 server = ModularServer(
     BacolodModel,
     visual_elements,
-    "Bacolod Multi-View Simulation",
+    "Bacolod Multi-Layered Governance Simulation",
     model_params
 )
 

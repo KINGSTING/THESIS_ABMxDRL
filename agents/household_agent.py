@@ -5,7 +5,7 @@ import numpy as np
 class HouseholdAgent(mesa.Agent):
     """
     Household Agent based on Theory of Planned Behavior (TPB).
-    Implements a 'Two-Stage Social Shield' with corrected Decision Logic.
+    Implements a 'Two-Stage Social Shield' and Multi-Layered Governance Interactions.
     """
     def __init__(self, unique_id, model, income_level, initial_compliance, behavior_params=None):
         super().__init__(unique_id, model)
@@ -35,7 +35,7 @@ class HouseholdAgent(mesa.Agent):
 
         self.utility = 0.0
         self.redeemed_this_quarter = False
-        self.perceived_unfairness = False # Added tracker for the decay boost
+        self.perceived_unfairness = False # Tracker for decay boost
 
     def update_social_norms(self):
         # 1. Calculate Local Compliance among neighbors in the same Barangay
@@ -103,7 +103,6 @@ class HouseholdAgent(mesa.Agent):
         """
         Calculates Utility based on Monetary factors and TPB.
         """
-        # --- FIX: Ensure Barangay exists ---
         if not self.barangay: return
 
         # 1. Variable Decay based on Reward History
@@ -153,11 +152,12 @@ class HouseholdAgent(mesa.Agent):
             if random.random() < 0.10: 
                 reward_amount = self.barangay.incentive_val
                 if reward_amount > 0:
+                    # give_reward now accesses both Barangay Base and LGU Universal Pools
                     success = self.barangay.give_reward(reward_amount)
                     self.redeemed_this_quarter = True 
 
                     if success:
-                        self.attitude += 0.05 
+                        self.attitude = min(0.95, self.attitude + 0.05)
                     else:
                         # Bankruptcy/Unfairness Penalty
                         self.attitude -= 0.30  
@@ -166,26 +166,34 @@ class HouseholdAgent(mesa.Agent):
 
     def receive_incentive(self, amount):
         """
-        Logic for when the Barangay pushes an incentive to the household
-        (as opposed to the household attempting to redeem it).
+        Logic for when the Barangay pushes an incentive to the household.
         """
-        # 1. Update Attitude (Getting money makes them more positive towards the system)
-        self.attitude += 0.05 
-        
-        # 2. Mark as rewarded for the quarter
+        self.attitude = min(0.95, self.attitude + 0.05) 
         self.redeemed_this_quarter = True
+
+    def get_fined(self, amount):
+        """
+        Triggered dynamically by an EnforcementAgent passing its specific fine_amount.
+        (e.g., 500 for local Tanod, 1000 for Municipal Inspector).
+        """
+        # 1. Direct Economic Hit (Scaled by Income level)
+        gamma = 1.5 if self.income_level == 1 else (1.0 if self.income_level == 2 else 0.8)
+        penalty = (amount / 1000.0) * gamma
+        self.utility -= penalty
         
-        # 3. Cap attitude at the realism limit
-        if self.attitude > 0.95:
-            self.attitude = 0.95
-            
-        # Optional: Print for debugging
-        # print(f"Agent {self.unique_id} received {amount} PHP")
+        # 2. Resentment (Drop in attitude)
+        self.attitude = max(0.0, self.attitude - 0.10)
+        
+        # 3. Immediate Behavioral Correction (Fear Factor)
+        # Higher fine = higher chance of immediate panic-compliance
+        fear_probability = 0.70 if amount <= 500 else 0.95
+        if random.random() < fear_probability:
+            self.is_compliant = True
+            # Getting caught forces them to learn how to do it right
+            self.pbc = min(0.95, self.pbc + 0.05)
 
     def step(self):
         self.update_attitude()
         self.update_social_norms()
         self.make_decision()
         self.attempt_redemption()
-
-        

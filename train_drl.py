@@ -1,81 +1,41 @@
 import os
-import signal
-import sys
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from bacolod_gym import BacolodGymEnv
 
-# Global model reference for the safety handler
-model = None
-models_dir = "models/PPO"
+def make_env(rank, seed=0):
+    def _init():
+        return BacolodGymEnv()
+    return _init
 
-def signal_handler(sig, frame):
-    """
-    Catches Ctrl+C and saves the model before exiting.
-    """
-    global model
-    print("\n\n!!! INTERRUPT RECEIVED !!!")
-    if model is not None:
-        save_path = f"{models_dir}/bacolod_ppo_interrupted"
-        model.save(save_path)
-        print(f"Safety Save: Model saved to {save_path}.zip")
-        print("You can load this model later to continue training.")
-    sys.exit(0)
-
-def main():
-    global model
+def train():
+    num_cpu = 4 
     
-    # 1. Setup Directories
-    log_dir = "logs"
-    os.makedirs(models_dir, exist_ok=True)
-    os.makedirs(log_dir, exist_ok=True)
+    # WE ARE BACK TO 4 CORES!
+    vec_env = SubprocVecEnv([make_env(i) for i in range(num_cpu)])
+    vec_env = VecMonitor(vec_env) 
 
-    # 2. Instantiate Environment
-    env = BacolodGymEnv()
-    # Optional: check_env(env) # silenced for speed
-
-    # 3. Define Model
-    # Check if a saved model exists to continue training (Optional)
-    # model = PPO.load("models/PPO/bacolod_ppo_final", env=env) 
+    TIMESTEPS = 5000 
     
-    # OR Start Fresh:
     model = PPO(
         "MlpPolicy",
-        env,
+        vec_env,
         verbose=1,
-        tensorboard_log=log_dir,
-        learning_rate=0.0003,
+        learning_rate=0.001,  
+        n_steps=60,          
+        batch_size=60,       
+        n_epochs=10,
         gamma=0.99,
-        ent_coef=0.02, # Low entropy so it commits to the strategy
-        policy_kwargs=dict(net_arch=dict(pi=[128, 128], vf=[128, 128]))
+        ent_coef=0.01,
+        tensorboard_log="./logs/",
+        device="cpu"
     )
 
-    # 4. Setup Checkpoints (Auto-Save every 5,000 steps)
-    checkpoint_callback = CheckpointCallback(
-        save_freq=5000,
-        save_path=models_dir,
-        name_prefix="bacolod_checkpoint"
-    )
-
-    # 5. Register the Safety Handler (Ctrl+C protection)
-    signal.signal(signal.SIGINT, signal_handler)
-
-    # 6. Train
-    TIMESTEPS = 5000 
-    print(f"Starting training for {TIMESTEPS} steps...")
-    print("... You can press Ctrl+C at any time to safely stop and save ...")
+    print(f"Bacolod DRL: Fast-Track Training Started on {num_cpu} Cores...")
+    model.learn(total_timesteps=TIMESTEPS, progress_bar=True)
     
-    model.learn(
-        total_timesteps=TIMESTEPS, 
-        progress_bar=True, 
-        callback=checkpoint_callback
-    )
-    
-    # 7. Final Save (If it finishes normally)
-    save_path = f"{models_dir}/bacolod_ppo_final"
-    model.save(save_path)
-    print(f"DONE! Model saved to: {save_path}.zip")
+    model.save("models/ppo/bacolod_ppo_final")
+    print("\n[SUCCESS] Training Complete! Ready for your comparison.")
 
 if __name__ == "__main__":
-    main()
+    train()

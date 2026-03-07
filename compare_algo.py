@@ -1,85 +1,74 @@
 import matplotlib
-matplotlib.use('Agg') # Force headless mode to prevent window errors
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from agents.bacolod_model import BacolodModel
 
 def run_simulation(policy_mode, label, duration_quarters=12):
-    """
-    Runs a single simulation instance with the specified policy mode.
-    Returns the Global Compliance history per quarter.
-    """
-    print(f"\n[SIMULATION START] Running {label} (Mode: {policy_mode})...")
-    
-    # Initialize Model
-    # Note: We set train_mode=False so it runs normally.
+    """Runs simulation and returns history. Stops early if political collapse occurs."""
+    print(f"\n[SIMULATION START] Running {label}...")
     model = BacolodModel(train_mode=False, policy_mode=policy_mode)
-    
     history = []
     
-    # Run for the specified duration (e.g., 12 Quarters = 3 Years)
     for q in range(1, duration_quarters + 1):
-        # Run 90 ticks (1 Quarter)
         for day in range(90):
+            if not model.running: break 
             model.step()
             
-            # Optional: Print progress every 30 days to show it's alive
-            if day % 30 == 0:
-                print(f"   . Day {day}...", end="\r")
-
-        # Capture Data at the end of the Quarter
-        # We use the DataCollector to get the precise global compliance
         df = model.datacollector.get_model_vars_dataframe()
         global_comp = df["Global Compliance"].iloc[-1]
-        
-        print(f" > Quarter {q}: Compliance = {global_comp:.2%}")
         history.append(global_comp)
         
-    print(f"[SIMULATION END] {label} Final Score: {history[-1]:.2%}")
+        if not model.running:
+            print(f" > Quarter {q}: SIMULATION HALTED (Political Collapse).")
+            return history # Returns shorter list so plot_comparison can detect it
+            
+        print(f" > Quarter {q}: Compliance = {global_comp:.2%}")
     return history
 
-if __name__ == "__main__":
-    print("=============================================================")
-    print("   PERFORMANCE TEST: STATUS QUO vs. HEURISTIC (NEW)")
-    print("=============================================================")
-
-    # 1. RUN OLD LOGIC (Status Quo)
-    # Passing "status_quo" causes the model to SKIP the Heuristic block 
-    # in apply_action and use the standard equal/weighted distribution.
-    results_old = run_simulation("status_quo", "Old Logic (Status Quo)")
-
-    # 2. RUN NEW LOGIC (Heuristic)
-    # Passing "ppo" triggers the 'if self.policy_mode == "ppo"' block 
-    # in apply_action, activating your Worst-First + Sustain + TBTF logic.
-    results_new = run_simulation("ppo", "New Logic (Heuristic)")
-
-    # 3. GENERATE COMPARISON PLOT
-    print("\n[INFO] Generating Comparison Graph...")
-    quarters = range(1, 13)
-    
+def plot_comparison(results_dict):
+    """Handles the specialized plotting including the 'Collapse' markers."""
     plt.figure(figsize=(12, 7))
     
-    # Plot Old Logic (Gray, Dashed)
-    plt.plot(quarters, results_old, marker='o', linestyle='--', color='gray', alpha=0.7, linewidth=2, label='Non-Heuristic Approach')
-    
-    # Plot New Logic (Blue, Solid, Bold)
-    plt.plot(quarters, results_new, marker='o', linestyle='-', color='#007acc', linewidth=3, label='Heuristic Approach')
-    
-    # Add Reference Lines
-    plt.axhline(y=0.70, color='red', linestyle=':', alpha=0.5, label='Stability Threshold (70%)')
-    plt.axhline(y=0.40, color='orange', linestyle=':', alpha=0.5, label='Collapse Zone (40%)')
+    for label, history in results_dict.items():
+        quarters = list(range(1, len(history) + 1))
+        
+        # Determine color/style based on label
+        color = '#007acc' if "HuDRL" in label else None
+        linewidth = 3 if "HuDRL" in label else 2
+        
+        line, = plt.plot(quarters, history, label=label, marker='o', linewidth=linewidth, color=color)
+        
+        # If simulation collapsed (lasted less than 12 quarters)
+        if len(history) < 12:
+            plt.scatter(quarters[-1], history[-1], color='red', s=150, marker='X', zorder=5)
+            plt.annotate("Political Collapse", (quarters[-1], history[-1]), 
+                         textcoords="offset points", xytext=(0,10), 
+                         ha='center', color='red', fontweight='bold')
 
-    # Formatting
-    plt.title('Comparison of Non-Heuristic & Heuristic Approach', fontsize=14)
-    plt.xlabel('Quarter', fontsize=12)
-    plt.ylabel('Global Compliance Rate', fontsize=12)
-    plt.xticks(quarters)
-    plt.ylim(0, 1.05)
-    plt.legend(loc='lower right', fontsize=11)
-    plt.grid(True, alpha=0.3)
+    # Reference lines for TPB Logic
+    plt.axhline(y=0.70, color='green', linestyle=':', alpha=0.6, label='Lock-in Threshold (70%)')
     
-    # Save File
-    filename = 'heuristic_vs_status_quo.png'
-    plt.savefig(filename, dpi=300)
-    print(f"[SUCCESS] Graph saved as '{filename}'")
+    plt.xlabel("Quarter (90-day periods)")
+    plt.ylabel("Global Compliance Rate")
+    plt.title("LGU Policy Performance: The Cost of Strictness", fontsize=14, fontweight='bold')
+    plt.legend(loc='lower right')
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.gca().yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
+    
+    plt.savefig('lgu_policy_comparison.png', dpi=300)
+    print("\n[SUCCESS] Graph saved as 'lgu_policy_comparison.png'")
+
+if __name__ == "__main__":
+    QUARTERS = 12
+    all_results = {}
+
+    # Run the different scenarios
+    all_results['Status Quo (IEC)'] = run_simulation("status_quo", "Status Quo", QUARTERS)
+    all_results['Pure Incentives'] = run_simulation("pure_incentives", "Incentives", QUARTERS)
+    all_results['Pure Enforcement'] = run_simulation("pure_enforcement", "Enforcement", QUARTERS)
+    all_results['HuDRL (Smart)'] = run_simulation("HuDRL", "HuDRL", QUARTERS)
+
+    # Execute the plotting function
+    plot_comparison(all_results)
