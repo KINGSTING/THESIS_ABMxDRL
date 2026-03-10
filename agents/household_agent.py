@@ -35,24 +35,30 @@ class HouseholdAgent(mesa.Agent):
 
         self.utility = 0.0
         self.redeemed_this_quarter = False
-        self.perceived_unfairness = False # Tracker for decay boost
+        self.perceived_unfairness = False
+        self.days_since_fined = 999 # <--- ADD THIS
 
     def update_social_norms(self):
-        # 1. Calculate Local Compliance among neighbors in the same Barangay
-        neighbors = self.model.grid.get_neighbors(self.pos, moore=True, radius=2)
-        household_neighbors = [n for n in neighbors if isinstance(n, HouseholdAgent) and n.barangay_id == self.barangay_id]
-        
-        local_compliance = 0.0
-        if household_neighbors:
-            compliant_count = sum(1 for n in household_neighbors if n.is_compliant)
-            local_compliance = compliant_count / len(household_neighbors)
+        # 1. Calculate Local Compliance
+        # --- FAST MATH OVERRIDE ---
+        if self.model.train_mode:
+            local_compliance = self.barangay.compliance_rate if self.barangay else 0.0
+        else:
+            # Slow visual grid logic (Only used for Server/UI)
+            neighbors = self.model.grid.get_neighbors(self.pos, moore=True, radius=2)
+            household_neighbors = [n for n in neighbors if isinstance(n, HouseholdAgent) and n.barangay_id == self.barangay_id]
+            
+            local_compliance = 0.0
+            if household_neighbors:
+                compliant_count = sum(1 for n in household_neighbors if n.is_compliant)
+                local_compliance = compliant_count / len(household_neighbors)
 
         # Authority Boost
         authority_boost = 0.0
         if self.barangay:
             authority_boost = self.barangay.enforcement_intensity * 0.50
 
-        # Perception Cap (Realism: Humans never perceive 100% perfection)
+        # Perception Cap 
         target_sn = min(0.92, local_compliance + authority_boost)
 
         # 2. Apply Social Shield (Inertia)
@@ -135,11 +141,15 @@ class HouseholdAgent(mesa.Agent):
                        (self.w_pbc * self.pbc) - \
                        c_net + epsilon
 
-        self.is_compliant = (self.utility > 0.0)
-        
-        # Human Error (1% Rule)
-        if self.is_compliant and random.random() < 0.01:
-             self.is_compliant = False
+        # --- THE FEAR MEMORY FIX ---
+        self.days_since_fined += 1
+        if self.days_since_fined < 30:
+            self.is_compliant = True  # Too scared to break the law for a month
+        else:
+            self.is_compliant = (self.utility > 0.0)
+            # Human Error (1% Rule)
+            if self.is_compliant and random.random() < 0.01:
+                 self.is_compliant = False
 
     def attempt_redemption(self):
         # Reset at the very start of the quarter
@@ -189,8 +199,8 @@ class HouseholdAgent(mesa.Agent):
         fear_probability = 0.70 if amount <= 500 else 0.95
         if random.random() < fear_probability:
             self.is_compliant = True
-            # Getting caught forces them to learn how to do it right
             self.pbc = min(0.95, self.pbc + 0.05)
+            self.days_since_fined = 0 # <--- The trauma begins
 
     def step(self):
         self.update_attitude()

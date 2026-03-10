@@ -51,11 +51,11 @@ BEHAVIOR_PROFILES = {
 
     # Binuni: Compliance is very high at around 95%[cite: 22]. Social norms are high[cite: 31]. 
     # The effort is low because it is well-practiced[cite: 29, 30]. Decay is low[cite: 32, 33].
-    "Binuni":        {"w_a": 0.40, "w_sn": 0.45, "w_pbc": 0.35, "c_effort": 0.45, "decay": 0.005},
+    "Binuni":        {"w_a": 0.40, "w_sn": 0.45, "w_pbc": 0.35, "c_effort": 0.45, "decay": 0.010},
     
     # Babalaya: Compliance is at 100%[cite: 5]. There is high social pressure acting as an information campaign[cite: 14]. 
     # Residents find the effort low[cite: 11, 12]. There is low decay[cite: 15, 16].
-    "Babalaya":      {"w_a": 0.35, "w_sn": 0.50, "w_pbc": 0.35, "c_effort": 0.40, "decay": 0.005}
+    "Babalaya":      {"w_a": 0.35, "w_sn": 0.50, "w_pbc": 0.35, "c_effort": 0.40, "decay": 0.010}
 }
 
 # =============================================================================

@@ -24,21 +24,26 @@ class MayorAgent(mesa.Agent):
             self.run_decision_logic()
 
     def run_decision_logic(self):
-        # --- MULTI-CORE FIX: Do not run standard logic during DRL Training ---
-        # The Gym environment will handle calling execute_intervention directly.
-        if getattr(self.model, 'train_mode', False):
-            return 
-            
-        if not self.model.behavior_override: 
-            current_quarter = (self.model.tick // 90) + 1
-
         # 1. AI MODE (HuDRL)
         if self.model.policy_mode == "HuDRL" and self.model.rl_agent is not None:
             state = self.model.get_state()
             raw_action, _ = self.model.rl_agent.predict(state, deterministic=True)
-            # Softmax to turn raw values into budget percentages
-            exps = np.exp(raw_action - np.max(raw_action))
-            action_vector = exps / np.sum(exps)
+            
+            # --- MATCHES THE GYM ENVIRONMENT MATH ---
+            amplified = np.exp(raw_action * 2.0)
+            
+            # --- MATCHES THE GYM HARD RULE ---
+            compliance_rates = state[0:7]
+            for i in range(7):
+                if compliance_rates[i] >= 0.70:
+                    amplified[i*3 : i*3+3] *= 0.01
+                    
+            total_desire = np.sum(amplified)
+            
+            if total_desire > 0:
+                action_vector = amplified / total_desire
+            else:
+                action_vector = np.ones(21) / 21.0
             
         # 2. MANUAL STRATEGIES (Status Quo, Pure Enf, Pure Inc)
         else:
