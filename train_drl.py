@@ -16,7 +16,7 @@ def train():
     vec_env = VecMonitor(vec_env) 
 
     # Increase timesteps to at least 500k - 1 Million for a 21D space
-    TIMESTEPS = 50000
+    TIMESTEPS = 10000
     
     model = PPO(
         "MlpPolicy",

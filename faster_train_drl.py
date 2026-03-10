@@ -14,19 +14,18 @@ def train():
     vec_env = VecMonitor(vec_env) 
 
     # --- MICRO-TEST MODE ---
-    # 1200 steps = exactly 6 minutes.
     TIMESTEPS = 1200 
     
     model = PPO(
         "MlpPolicy",
         vec_env,
         verbose=1,
-        learning_rate=0.01,  
+        learning_rate=0.001,  
         n_steps=60,          
         batch_size=60,       
         n_epochs=10,
         gamma=0.99,
-        ent_coef=0.05,        # Forces aggressive exploration
+        ent_coef=0.02,        # Forces aggressive exploration
         tensorboard_log="./logs/",
         device="cpu"
     )

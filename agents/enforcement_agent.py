@@ -10,8 +10,21 @@ class EnforcementAgent(mesa.Agent):
         self.patrol_range = patrol_range
         self.fine_amount = 500
         self.is_municipal = False 
+        
+        # --- THE MISSING LINE ---
+        self.visited_households = set()
 
     def step(self):
+        # --- NEW: 30-DAY CONTRACT CHECK ---
+        if getattr(self, 'is_municipal', False):
+            if hasattr(self, 'contract_days'):
+                self.contract_days -= 1
+                if self.contract_days <= 0:
+                    self.model.grid.remove_agent(self)
+                    self.model.schedule.remove(self)
+                    return # Exit the step instantly, they went home!
+
+        self.visited_households.clear() 
         is_municipal = getattr(self, 'is_municipal', False)
         
         # Realistic Quotas (15 for full-time, 8 for part-time)

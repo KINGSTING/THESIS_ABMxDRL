@@ -29,33 +29,33 @@ INCOME_PROFILES = {
 #  BEHAVIOR PROFILES (CALIBRATED TO INTERVIEW TRANSCRIPTS - ~12.5% BASELINE)
 # =============================================================================
 BEHAVIOR_PROFILES = {
-    # Poblacion: Compliance is around 2%[cite: 154]. Social norms are low with no reporting of non-compliance[cite: 160]. 
-    # Residents put mixed garbage in sacks, indicating high effort resistance[cite: 159]. Even educated residents struggle with high decay[cite: 162].
-    "Poblacion":     {"w_a": 0.25, "w_sn": 0.15, "w_pbc": 0.20, "c_effort": 0.75, "decay": 0.030},
+    # Poblacion: Compliance is around 2%. Social norms are low with no reporting of non-compliance. 
+    # Residents put mixed garbage in sacks, indicating high effort resistance. Even educated residents struggle with high decay.
+    "Poblacion":     {"w_a": 0.25, "w_sn": 0.15, "w_pbc": 0.20, "c_effort": 0.75, "decay": 0.0030},
     
-    # Liangan East: Compliance hits 60-70% but is only good at the start[cite: 82, 83]. 
-    # High decay is present, and low-income households lack money to buy segregation bins, creating an economic effort barrier[cite: 87].
-    "Liangan_East":  {"w_a": 0.25, "w_sn": 0.30, "w_pbc": 0.20, "c_effort": 0.65, "decay": 0.035},
+    # Liangan East: Compliance hits 60-70% but is only good at the start. 
+    # High decay is present, and low-income households lack money to buy segregation bins, creating an economic effort barrier.
+    "Liangan_East":  {"w_a": 0.25, "w_sn": 0.30, "w_pbc": 0.20, "c_effort": 0.65, "decay": 0.0035},
     
-    # Ezperanza: Compliance is around 20%[cite: 52]. Social norms are high[cite: 62]. 
-    # Effort is low, but the mental attitude and appreciation of the ordinance are lacking[cite: 60, 61]. Decay is low[cite: 63, 64].
-    "Ezperanza":     {"w_a": 0.20, "w_sn": 0.35, "w_pbc": 0.25, "c_effort": 0.65, "decay": 0.015},
+    # Ezperanza: Compliance is around 20%. Social norms are high. 
+    # Effort is low, but the mental attitude and appreciation of the ordinance are lacking. Decay is low.
+    "Ezperanza":     {"w_a": 0.20, "w_sn": 0.35, "w_pbc": 0.25, "c_effort": 0.65, "decay": 0.0015},
     
-    # Mati: Compliance is around 70%[cite: 102]. Reporting of illegal dumping is high due to social norms[cite: 111]. 
-    # However, there is high decay because people slide back into old habits[cite: 112, 113].
-    "Mati":          {"w_a": 0.30, "w_sn": 0.40, "w_pbc": 0.25, "c_effort": 0.60, "decay": 0.030},
+    # Mati: Compliance is around 70%. Reporting of illegal dumping is high due to social norms. 
+    # However, there is high decay because people slide back into old habits.
+    "Mati":          {"w_a": 0.30, "w_sn": 0.40, "w_pbc": 0.25, "c_effort": 0.60, "decay": 0.0030},
     
-    # Demologan: Compliance is around 60%[cite: 39]. Effort is low because an MRF and collector are available[cite: 44, 45]. 
-    # Awareness is high[cite: 46]. Decay is low[cite: 47].
-    "Demologan":     {"w_a": 0.35, "w_sn": 0.35, "w_pbc": 0.30, "c_effort": 0.55, "decay": 0.010},
+    # Demologan: Compliance is around 60%. Effort is low because an MRF and collector are available. 
+    # Awareness is high. Decay is low.
+    "Demologan":     {"w_a": 0.35, "w_sn": 0.35, "w_pbc": 0.30, "c_effort": 0.55, "decay": 0.0010},
 
-    # Binuni: Compliance is very high at around 95%[cite: 22]. Social norms are high[cite: 31]. 
-    # The effort is low because it is well-practiced[cite: 29, 30]. Decay is low[cite: 32, 33].
-    "Binuni":        {"w_a": 0.40, "w_sn": 0.45, "w_pbc": 0.35, "c_effort": 0.45, "decay": 0.010},
+    # Binuni: Compliance is very high at around 95%. Social norms are high. 
+    # The effort is low because it is well-practiced. Decay is low.
+    "Binuni":        {"w_a": 0.40, "w_sn": 0.45, "w_pbc": 0.35, "c_effort": 0.45, "decay": 0.0010},
     
-    # Babalaya: Compliance is at 100%[cite: 5]. There is high social pressure acting as an information campaign[cite: 14]. 
-    # Residents find the effort low[cite: 11, 12]. There is low decay[cite: 15, 16].
-    "Babalaya":      {"w_a": 0.35, "w_sn": 0.50, "w_pbc": 0.35, "c_effort": 0.40, "decay": 0.010}
+    # Babalaya: Compliance is at 100%. There is high social pressure acting as an information campaign. 
+    # Residents find the effort low. There is low decay.
+    "Babalaya":      {"w_a": 0.35, "w_sn": 0.50, "w_pbc": 0.35, "c_effort": 0.40, "decay": 0.0010}
 }
 
 # =============================================================================

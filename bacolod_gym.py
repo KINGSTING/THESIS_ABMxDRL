@@ -30,14 +30,12 @@ class BacolodGymEnv(gym.Env):
         return self.model.get_state()
 
     def step(self, action):
-       # --- THE SHARP SOFTMAX TRANSLATOR ---
-        # This allows the AI to easily spike allocations over the 45K threshold
-        amplified = np.exp(action * 2.0)
-
-        # THE GRADUATION CUT (Crucial!)
-        for i in range(7):
-            if self.prev_compliance[i] >= 0.70:
-                amplified[i*3 : i*3+3] *= 0.01
+        # --- THE AGGRESSIVE 21-ACTION TRANSLATOR ---
+        positive_desires = (action + 1.0) / 2.0
+        
+        # CALIBRATION: Power of 4. 
+        # This mathematically forces "Sequential Saturation" while keeping all 21 choices legal.
+        amplified = np.power(positive_desires, 4) 
         
         total_desire = np.sum(amplified)
         if total_desire > 0:

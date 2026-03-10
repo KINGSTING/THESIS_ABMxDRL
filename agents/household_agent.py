@@ -186,16 +186,32 @@ class HouseholdAgent(mesa.Agent):
         Triggered dynamically by an EnforcementAgent passing its specific fine_amount.
         (e.g., 500 for local Tanod, 1000 for Municipal Inspector).
         """
-        # 1. Direct Economic Hit (Scaled by Income level)
-        gamma = 1.5 if self.income_level == 1 else (1.0 if self.income_level == 2 else 0.8)
-        penalty = (amount / 1000.0) * gamma
-        self.utility -= penalty
+        # --- 1. TRACK THE FINE ---
+        self.is_fined = True
+        if not hasattr(self, 'fine_amount'):
+            self.fine_amount = 0
+        self.fine_amount += amount
+
+        # --- 2. THE POLITICAL BACKLASH MECHANISM ---
+        # Every single fine issued makes the citizens angrier at the Mayor.
+        # This prevents the "Pure Enforcement" strategy from surviving a massive blitz.
+        political_penalty = 0.00005
+        self.model.political_capital -= political_penalty
         
-        # 2. Resentment (Drop in attitude)
+        # Ensure it doesn't drop below 0 to avoid math errors
+        self.model.political_capital = max(0.0, self.model.political_capital)
+
+        # --- 3. Direct Economic Hit (Scaled by Income level) ---
+        gamma = 1.5 if getattr(self, 'income_level', 2) == 1 else (1.0 if getattr(self, 'income_level', 2) == 2 else 0.8)
+        econ_penalty = (amount / 1000.0) * gamma
+        self.utility -= econ_penalty
+        
+        # --- 4. Resentment (Drop in attitude) ---
         self.attitude = max(0.0, self.attitude - 0.10)
         
-        # 3. Immediate Behavioral Correction (Fear Factor)
+        # --- 5. Immediate Behavioral Correction (Fear Factor) ---
         # Higher fine = higher chance of immediate panic-compliance
+        import random
         fear_probability = 0.70 if amount <= 500 else 0.95
         if random.random() < fear_probability:
             self.is_compliant = True

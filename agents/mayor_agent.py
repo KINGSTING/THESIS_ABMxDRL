@@ -77,6 +77,9 @@ class MayorAgent(mesa.Agent):
         """
         scale_factor = self.municipal_budget # Total LGU money to spend this quarter
         
+        # --- NEW: Initialize tracker for Political Recovery ---
+        total_incentives_spent = 0.0 
+        
         for i, bgy in enumerate(self.model.barangays):
             idx = i * 3
             # Extract LGU-specific budget for this specific Barangay
@@ -95,27 +98,48 @@ class MayorAgent(mesa.Agent):
             # --- LEVER 2: UNIVERSAL INCENTIVES (LGU Reward Pool) ---
             # Households can redeem this on top of their local barangay goods
             bgy.lgu_incentive_fund = lgu_inc
+            total_incentives_spent += lgu_inc  # <--- TRACK IT HERE!
 
             # --- LEVER 3: UNIFIED IEC (Municipal Awareness) ---
             # Direct boost to household attitude via LGU-led programs
             if lgu_iec > 0:
                 self.run_municipal_iec(bgy, lgu_iec)
 
-    def deploy_municipal_inspectors(self, bgy, fund):
-        # Calculate how many inspectors this budget can afford
-        # (Assuming 500 per inspector per day for the quarter)
-        target_inspectors = int(fund // (500 * 90)) 
+        # ==========================================================
+        # POLITICAL CAPITAL RECOVERY (THE APPROVAL RATING)
+        # ==========================================================
         
-        current_inspectors = [
-            a for a in self.model.schedule.agents 
-            if isinstance(a, EnforcementAgent) 
-            and a.is_municipal 
-            and a.barangay_id == bgy.unique_id
-        ]
+        # 1. Every 10,000 PHP spent on Incentives buys back 0.01 Political Capital
+        ayuda_boost = (total_incentives_spent / 10000.0) * 0.01
+        
+        # 2. Calculate the "Clean City" Bonus
+        households = [a for a in self.model.schedule.agents if hasattr(a, 'is_compliant')]
+        compliant_count = sum(1 for h in households if h.is_compliant)
+        global_compliance = compliant_count / max(1, len(households))
+        
+        # If the Mayor gets the city over 70% compliance, the public is happy!
+        clean_city_boost = 0.05 if global_compliance >= 0.70 else 0.0
+        
+        # 3. Apply the healing (Capped at 1.0 or 100% approval)
+        self.model.political_capital = min(1.0, self.model.political_capital + ayuda_boost + clean_city_boost)
 
-        # Add new inspectors
-        if len(current_inspectors) < target_inspectors:
-            for _ in range(target_inspectors - len(current_inspectors)):
+    def deploy_municipal_inspectors(self, bgy, fund):
+        import random # Ensure this is at the top of your file if not already there
+
+        # 400 PHP * 30 Days = 12,000 PHP per enforcer task force contract
+        target_inspectors = int(fund // (400 * 30)) 
+        
+        current_municipal = [a for a in self.model.schedule.agents 
+                             if isinstance(a, EnforcementAgent) 
+                             and getattr(a, 'is_municipal', False) 
+                             and a.barangay_id == bgy.unique_id]
+
+        current_count = len(current_municipal)
+
+        # Add new inspectors if funding allows
+        if current_count < target_inspectors:
+            inspectors_to_add = target_inspectors - current_count
+            for _ in range(inspectors_to_add):
                 # IMPROVED UNIQUE ID: Include a random salt to prevent collisions
                 new_id = f"LGU_ENF_{bgy.unique_id}_{self.model.tick}_{random.randint(10000, 99999)}"
                 
@@ -123,13 +147,27 @@ class MayorAgent(mesa.Agent):
                 if new_id in self.model.schedule._agents:
                     continue # Skip if ID miraculously exists
                 
-                pos = (self.random.randrange(self.model.grid.width), self.random.randrange(self.model.grid.height))
+                # Instantiate the enforcer
                 inspector = EnforcementAgent(new_id, self.model, bgy.unique_id)
+                
+                # Configure their specific Task Force attributes
                 inspector.is_municipal = True
                 inspector.fine_amount = 1000 
+                inspector.contract_days = 30  # <--- THE 30-DAY EXPIRATION TIMER
+                
+                # Position them on the grid
+                pos = (self.random.randrange(self.model.grid.width), self.random.randrange(self.model.grid.height))
                 
                 self.model.schedule.add(inspector)
                 self.model.grid.place_agent(inspector, pos)
+                
+        # Remove excess inspectors if budget was slashed 
+        # (Though most will naturally expire after 30 days anyway due to the timer)
+        elif current_count > target_inspectors:
+            inspectors_to_remove = current_count - target_inspectors
+            for inspector in current_municipal[:inspectors_to_remove]:
+                self.model.grid.remove_agent(inspector)
+                self.model.schedule.remove(inspector)
 
     def run_municipal_iec(self, bgy, fund):
         # --- LGU MACRO-IEC EQUATION ---
