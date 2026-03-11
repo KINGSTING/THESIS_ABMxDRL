@@ -15,6 +15,8 @@ class EnforcementAgent(mesa.Agent):
         self.visited_households = set()
 
     def step(self):
+        import random
+        
         # --- NEW: 30-DAY CONTRACT CHECK ---
         if getattr(self, 'is_municipal', False):
             if hasattr(self, 'contract_days'):
@@ -27,8 +29,23 @@ class EnforcementAgent(mesa.Agent):
         self.visited_households.clear() 
         is_municipal = getattr(self, 'is_municipal', False)
         
-        # Realistic Quotas (15 for full-time, 8 for part-time)
-        max_daily_capacity = 15 if is_municipal else 8
+        # ==========================================================
+        # STOCHASTIC PATROLLING (The Nerf)
+        # ==========================================================
+        if is_municipal:
+            # The Mayor's Task Force is dedicated and patrols every day
+            max_daily_capacity = 25 
+            daily_travel_budget = 150
+        else:
+            # Tanods only catch 1 person max...
+            max_daily_capacity = 1
+            daily_travel_budget = 20
+            
+            # ...and they are busy with other duties 90% of the time!
+            if random.random() > 0.10: 
+                return # Skips the garbage patrol for today
+
+        caught_count = 0
 
         # ==========================================================
         # 1. THE MATH: Catch up to quota from ANYWHERE in the barangay
@@ -51,4 +68,4 @@ class EnforcementAgent(mesa.Agent):
         if not getattr(self.model, 'train_mode', False):
             possible_steps = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
             if possible_steps:
-                self.model.grid.move_agent(self, self.random.choice(possible_steps))
+                self.model.grid.move_agent(self, getattr(self.model, 'random', random).choice(possible_steps))

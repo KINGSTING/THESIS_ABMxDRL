@@ -75,6 +75,30 @@ class MayorAgent(mesa.Agent):
         """
         Directly implements LGU-funded levers across the 7 barangays.
         """
+        import numpy as np
+        
+        # =================================================================
+        # NEW: THE SEQUENTIAL SATURATION FILTER (TASK FORCE LIMIT)
+        # =================================================================
+        # Calculate the total intended budget for each of the 7 barangays
+        bgy_totals = [sum(action_vector[i*3:(i*3)+3]) for i in range(7)]
+        
+        # Find the indices of the TOP 2 barangays the AI wants to target most
+        top_2_indices = np.argsort(bgy_totals)[-2:] 
+        
+        # Create a new blank vector and ONLY copy over the top 2
+        focused_action = np.zeros(21)
+        for idx in top_2_indices:
+            focused_action[idx*3] = action_vector[idx*3]       # IEC
+            focused_action[idx*3+1] = action_vector[idx*3+1]   # ENF
+            focused_action[idx*3+2] = action_vector[idx*3+2]   # INC
+            
+        # Re-normalize so the chosen 2 barangays share 100% of the LGU budget
+        total_focused = np.sum(focused_action)
+        if total_focused > 0:
+            action_vector = focused_action / total_focused
+        # =================================================================
+
         scale_factor = self.municipal_budget # Total LGU money to spend this quarter
         
         # --- NEW: Initialize tracker for Political Recovery ---
@@ -109,16 +133,21 @@ class MayorAgent(mesa.Agent):
         # POLITICAL CAPITAL RECOVERY (THE APPROVAL RATING)
         # ==========================================================
         
-        # 1. Every 10,000 PHP spent on Incentives buys back 0.01 Political Capital
-        ayuda_boost = (total_incentives_spent / 10000.0) * 0.01
+        # 1. Every 5,000 PHP spent on Incentives buys back 0.01 Political Capital
+        ayuda_boost = (total_incentives_spent / 5000.0) * 0.01
         
-        # 2. Calculate the "Clean City" Bonus
+        # 2. Tiered "Clean City" Bonus (Breadcrumbs for the AI)
         households = [a for a in self.model.schedule.agents if hasattr(a, 'is_compliant')]
         compliant_count = sum(1 for h in households if h.is_compliant)
         global_compliance = compliant_count / max(1, len(households))
         
-        # If the Mayor gets the city over 70% compliance, the public is happy!
-        clean_city_boost = 0.05 if global_compliance >= 0.70 else 0.0
+        clean_city_boost = 0.0
+        if global_compliance >= 0.80:
+            clean_city_boost = 0.10   # Massive public pride
+        elif global_compliance >= 0.60:
+            clean_city_boost = 0.05   # Strong public approval
+        elif global_compliance >= 0.40:
+            clean_city_boost = 0.02   # People are starting to notice the clean streets
         
         # 3. Apply the healing (Capped at 1.0 or 100% approval)
         self.model.political_capital = min(1.0, self.model.political_capital + ayuda_boost + clean_city_boost)
@@ -192,8 +221,16 @@ class MayorAgent(mesa.Agent):
                       if type(a).__name__ == "HouseholdAgent" and getattr(a, 'barangay_id', None) == bgy.unique_id]
         
         if households and lgu_iec_intensity > 0:
-            # The maximum boost a full LGU campaign can give in one quarter is +0.05
-            impact = lgu_iec_intensity * 0.05 
+            # BUFFED: Increased impact from 0.05 to 0.15 so the AI isn't wasting its money
+            impact = lgu_iec_intensity * 0.15 
+            
+            import random # Ensure random is available for the trigger
             for h in households:
-                h.attitude = min(0.95, h.attitude + impact)
-                h.sn = min(0.95, h.sn + (impact * 0.5))
+                h.attitude = min(1.0, h.attitude + impact)
+                h.sn = min(1.0, h.sn + (impact * 0.5))
+                
+                # --- THE REALISTIC CONVERSION TRIGGER ---
+                # They must be highly convinced (>75%), and even then, only 20% actually change habits.
+                if h.attitude > 0.75:  
+                    if random.random() < 0.20:
+                        h.is_compliant = True

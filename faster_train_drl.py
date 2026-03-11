@@ -14,7 +14,7 @@ def train():
     vec_env = VecMonitor(vec_env) 
 
     # --- MICRO-TEST MODE ---
-    TIMESTEPS = 1200 
+    TIMESTEPS = 1000 
     
     model = PPO(
         "MlpPolicy",

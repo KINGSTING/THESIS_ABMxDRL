@@ -84,36 +84,53 @@ class BacolodGymEnv(gym.Env):
         political_capital = obs[16]
         budget_left = obs[14]
         
+        # 1. Base reward for general compliance
         global_compliance = np.mean(curr_compliance)
-        reward = global_compliance * 10.0   
-        if global_compliance >= 0.70: reward += 5.0                   
+        reward = global_compliance * 50.0  
+        
+        # 2. THE 90% SOCIAL NORM JACKPOT
+        # The AI gets a massive injection of points only if it crosses 90%
+        if global_compliance >= 0.90: 
+            reward += 200.0                   
             
         compliance_gains = curr_compliance - prev_compliance
         
         for i in range(7):
             start_idx = i * 3
             bgy_allocation = np.sum(allocation_vector[start_idx:start_idx+3])
-            
             enf_idx = start_idx + 1
-            if curr_compliance[i] < 0.70:
-                reward += (allocation_vector[enf_idx] * 2.0)
             
-            if prev_compliance[i] >= 0.70:
-                if bgy_allocation > 0.05: 
-                    reward -= (bgy_allocation * 10.0) 
-            else:
+            # 3. THE "SHOCK AND SUSTAIN" BREADCRUMBS
+            if curr_compliance[i] < 0.90:
+                # Hint: Use enforcement to break the initial resistance
+                reward += (allocation_vector[enf_idx] * 10.0) 
+                
+                # Jackpot: Reward the AI heavily when its actions actually increase compliance
                 if compliance_gains[i] > 0:
                     jackpot = (bgy_allocation * compliance_gains[i]) * 100.0  
                     reward += jackpot
+            else:
+                # Hint: Once past 90%, switch to IEC and Incentives to lock it in
+                sustain_budget = allocation_vector[start_idx] + allocation_vector[start_idx + 2]
+                reward += (sustain_budget * 20.0) 
+                
+                # Efficiency: Prevent the AI from wasting too much money on a "solved" barangay
+                if bgy_allocation > 0.10: 
+                    reward -= (bgy_allocation * 10.0) 
         
-        struggling_indices = np.where(curr_compliance < 0.70)[0]
+        # 4. FOCUS ALLOCATION BONUS
+        # Give a small extra reward if the AI specifically targets the absolute worst barangay
+        struggling_indices = np.where(curr_compliance < 0.90)[0]
         if len(struggling_indices) > 0:
             lowest_bgy_idx = struggling_indices[np.argmin(curr_compliance[struggling_indices])]
             focus_allocation = np.sum(allocation_vector[lowest_bgy_idx*3:(lowest_bgy_idx*3)+3])
             reward += (focus_allocation * 5.0)        
             
-        if budget_left <= 0.01: reward -= 0.5                             
-        reward -= ((1.0 - political_capital) * 0.5)                
-        if political_capital < 0.40: reward -= ((0.40 - political_capital) * 5.0)           
+        # 5. RESOURCE & POLITICAL MANAGEMENT
+        if budget_left <= 0.01: 
+            reward -= 0.5                             
+        
+        # Political Capital is a gentle modifier, giving points for keeping approval high
+        reward += (political_capital * 20.0)           
 
         return float(reward)

@@ -340,8 +340,10 @@ class BacolodModel(mesa.Model):
         if self.tick >= max_ticks: 
             self.running = False
             
-        if self.political_capital < 0.10:
-            self.running = False
+       # REMOVE OR COMMENT OUT THIS HALT CONDITION
+        # if self.political_capital < 0.10:
+        #     print("SIMULATION HALTED (Political Collapse).")
+        #     self.running = False
 
     def get_state(self):
         compliance_rates = [b.get_local_compliance() for b in self.barangays]

@@ -29,6 +29,7 @@ class HouseholdAgent(mesa.Agent):
             self.sn = random.uniform(0.6, 0.9)
             self.pbc = random.uniform(0.6, 0.9)
         else:
+            # REVERTED: Give them enough TPB buffer so they don't instantly decay to 0.
             self.attitude = random.uniform(0.1, 0.4)
             self.sn = random.uniform(0.1, 0.4)
             self.pbc = random.uniform(0.1, 0.4)
@@ -61,20 +62,27 @@ class HouseholdAgent(mesa.Agent):
         # Perception Cap 
         target_sn = min(0.92, local_compliance + authority_boost)
 
-        # 2. Apply Social Shield (Inertia)
+        # --- 2. Apply Social Shield (Inertia + Tipping Point) ---
         current_bgy_compliance = self.barangay.compliance_rate if self.barangay else 0.0
 
         if target_sn < self.sn: 
+            # DECAY PROTECTION (Your current logic)
             if current_bgy_compliance > 0.70:
-                self.sn = (0.90 * self.sn) + (0.10 * target_sn) # STAGE 2: LOCK-IN
+                self.sn = (0.95 * self.sn) + (0.05 * target_sn) # Stronger Lock-in
             elif current_bgy_compliance > 0.40:
-                self.sn = (0.85 * self.sn) + (0.15 * target_sn) # STAGE 1: ACTIVATION
+                self.sn = (0.85 * self.sn) + (0.15 * target_sn) 
             else:
                 self.sn = target_sn
         else:
-            self.sn = target_sn # Growth Mode
-            
-        self.sn = min(0.95, self.sn)
+            # GROWTH MODE (The Tipping Point)
+            if current_bgy_compliance > 0.50:
+                # If more than half the neighbors segregate, the pressure to join them 
+                # grows FASTER than the actual rate (Social Pressure Amplification)
+                self.sn = min(1.0, target_sn * 1.25) 
+            else:
+                self.sn = target_sn
+                    
+                self.sn = min(0.95, self.sn)
 
     def update_attitude(self):
         current_compliance = self.barangay.compliance_rate if self.barangay else 0.0
@@ -91,9 +99,9 @@ class HouseholdAgent(mesa.Agent):
         # 2. IEC Synergy
         if self.barangay:
             iec = getattr(self.barangay, 'iec_intensity', 0)
-            enf = self.barangay.enforcement_intensity
-            # Synergistic boost: Education works better when enforcement is present
-            boost = iec * 0.025 * (1.0 + (enf * 3.0))
+            enf = getattr(self.barangay, 'enforcement_intensity', 0)
+            # BUFFED: Divided by 30 instead of 90. Spreads the boost over a month instead of a day.
+            boost = (iec * 0.025 * (1.0 + (enf * 3.0))) / 30.0
             self.attitude += boost
 
         # 3. Pride & Complacency
@@ -210,13 +218,14 @@ class HouseholdAgent(mesa.Agent):
         self.attitude = max(0.0, self.attitude - 0.10)
         
         # --- 5. Immediate Behavioral Correction (Fear Factor) ---
-        # Higher fine = higher chance of immediate panic-compliance
+        # WEAKENED: Fines only work 40% to 60% of the time now. 
+        # The AI MUST use IEC campaigns to permanently change attitudes.
         import random
-        fear_probability = 0.70 if amount <= 500 else 0.95
+        fear_probability = 0.40 if amount <= 500 else 0.60
         if random.random() < fear_probability:
             self.is_compliant = True
             self.pbc = min(0.95, self.pbc + 0.05)
-            self.days_since_fined = 0 # <--- The trauma begins
+            self.days_since_fined = 0
 
     def step(self):
         self.update_attitude()

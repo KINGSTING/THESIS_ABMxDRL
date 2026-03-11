@@ -2,6 +2,7 @@ import mesa
 import random
 import math
 from agents.household_agent import HouseholdAgent
+from agents.enforcement_agent import EnforcementAgent
 
 class BarangayAgent(mesa.Agent):
     def __init__(self, unique_id, model, local_budget=0):
@@ -156,18 +157,24 @@ class BarangayAgent(mesa.Agent):
         return False
         
     def update_enforcement_intensity(self):
-        """
-        Eq 3.1 & 3.4 logic: Combines Local Tanods and LGU Enforcers 
-        to determine the final enforcement pressure.
-        """
-        # 1. Calculate base intensity from local tanods
-        local_pressure = min(1.0, self.n_enforcers / 10.0)
-
-        # 2. Add the LGU-funded enforcement (The DRL's "Extra Stick")
-        lgu_pressure = 0.0
-        if self.lgu_enf_fund > 0:
-            # $26,400 is roughly the cost of 1 extra full-time patrol per quarter
-            lgu_pressure = (self.lgu_enf_fund / 26400.0) * 0.2 
+        # 1. Find currently active Tanods
+        active_tanods = [a for a in self.model.schedule.agents 
+                         if type(a).__name__ == "EnforcementAgent" and getattr(a, 'barangay_id', None) == self.unique_id and not getattr(a, 'is_municipal', False)]
         
-        # 3. Final Intensity used by HouseholdAgent.step()
-        self.enforcement_intensity = min(1.0, local_pressure + lgu_pressure)
+        # FIX: Add a 0.30 "Ambient Fear" so citizens never feel 100% invincible.
+        target_ideal = max(1, self.n_households // 100) 
+        base_fear = 0.30
+        self.enforcement_intensity = base_fear + min(0.70, len(active_tanods) / target_ideal)
+        
+        # 2. If we have less tanods than the budget allows, spawn more
+        if len(active_tanods) < self.n_enforcers:
+            for i in range(self.n_enforcers - len(active_tanods)):
+                tanod = EnforcementAgent(self.model.next_id(), self.model, self.unique_id)
+                tanod.is_municipal = False
+                
+                # Place them randomly at a household in their own barangay
+                households = self.model.households_by_bgy.get(self.unique_id, [])
+                if households:
+                    pos = self.model.random.choice(households).pos
+                    self.model.grid.place_agent(tanod, pos)
+                    self.model.schedule.add(tanod)
