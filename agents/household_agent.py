@@ -75,10 +75,10 @@ class HouseholdAgent(mesa.Agent):
                 self.sn = target_sn
         else:
             # GROWTH MODE (The Tipping Point)
-            if current_bgy_compliance > 0.50:
-                # If more than half the neighbors segregate, the pressure to join them 
-                # grows FASTER than the actual rate (Social Pressure Amplification)
-                self.sn = min(1.0, target_sn * 1.25) 
+            # BUFFED: Lowered the tipping point from 50% to 25%. 
+            # Once 1 in 4 neighbors segregate, the social pressure catches fire!
+            if current_bgy_compliance > 0.25:
+                self.sn = min(1.0, target_sn * 1.30) # Amplified social pressure
             else:
                 self.sn = target_sn
                     
@@ -140,7 +140,23 @@ class HouseholdAgent(mesa.Agent):
         daily_incentive = (self.barangay.incentive_val * prob_of_getting_picked) / 90.0
         
         monetary_impact = daily_incentive + (fine * prob_detection)
-        c_net = self.c_effort_base - (gamma * monetary_impact / 2000.0) 
+        
+        # =================================================================
+        # THE HABIT SHIELD FIX (The Staircase Lock-in)
+        # When compliance crosses the threshold, the physical and mental 
+        # "cost of effort" drops permanently because it becomes a habit.
+        # =================================================================
+        current_compliance = self.barangay.compliance_rate if self.barangay else 0.0
+        effort_discount = 0.0
+        
+        if current_compliance >= 0.70:
+            effort_discount = self.c_effort_base * 0.85  # 85% easier to segregate (Locked-in Habit)
+        elif current_compliance >= 0.40:
+            effort_discount = self.c_effort_base * 0.40  # 40% easier (Social Normalization)
+
+        # Apply the discount to the base effort
+        c_net = (self.c_effort_base - effort_discount) - (gamma * monetary_impact / 2000.0) 
+        # =================================================================
 
         # 3. TPB Utility Summation
         epsilon = random.gauss(0, 0.05)
@@ -200,14 +216,15 @@ class HouseholdAgent(mesa.Agent):
             self.fine_amount = 0
         self.fine_amount += amount
 
-        # --- 2. THE POLITICAL BACKLASH MECHANISM ---
-        # Every single fine issued makes the citizens angrier at the Mayor.
-        # This prevents the "Pure Enforcement" strategy from surviving a massive blitz.
-        political_penalty = 0.00005
-        self.model.political_capital -= political_penalty
-        
-        # Ensure it doesn't drop below 0 to avoid math errors
-        self.model.political_capital = max(0.0, self.model.political_capital)
+        # =================================================================
+        # 2. THE POLITICAL BACKLASH MECHANISM (FIXED)
+        # The Mayor ONLY gets blamed for Municipal-level crackdowns (fines > 500).
+        # They do not lose capital for regular daily Barangay Tanod fines.
+        # =================================================================
+        if amount > 500:
+            political_penalty = 0.00015  # Heavier penalty, but only applies to Mayor's actions
+            self.model.political_capital -= political_penalty
+            self.model.political_capital = max(0.0, self.model.political_capital)
 
         # --- 3. Direct Economic Hit (Scaled by Income level) ---
         gamma = 1.5 if getattr(self, 'income_level', 2) == 1 else (1.0 if getattr(self, 'income_level', 2) == 2 else 0.8)
@@ -218,8 +235,6 @@ class HouseholdAgent(mesa.Agent):
         self.attitude = max(0.0, self.attitude - 0.10)
         
         # --- 5. Immediate Behavioral Correction (Fear Factor) ---
-        # WEAKENED: Fines only work 40% to 60% of the time now. 
-        # The AI MUST use IEC campaigns to permanently change attitudes.
         import random
         fear_probability = 0.40 if amount <= 500 else 0.60
         if random.random() < fear_probability:

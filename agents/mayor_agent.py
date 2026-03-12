@@ -29,10 +29,14 @@ class MayorAgent(mesa.Agent):
             state = self.model.get_state()
             raw_action, _ = self.model.rl_agent.predict(state, deterministic=True)
             
-            # --- MATCHES THE GYM ENVIRONMENT MATH ---
-            amplified = np.exp(raw_action * 2.0)
+            # --- INCREASED MULTIPLIER TO FORCE POLARIZED BUDGETS ---
+            # Changing 2.0 to 5.0 forces the AI to make extreme, concentrated choices 
+            # instead of smearing the budget equally.
+            amplified = np.exp(raw_action * 10.0)
             
-            # --- MATCHES THE GYM HARD RULE ---
+            # --- THE GRADUATION RULE ---
+            # Matches the Gym Environment: If a barangay is doing great (>= 70%), 
+            # artificially crush its AI allocation so the AI spends money elsewhere.
             compliance_rates = state[0:7]
             for i in range(7):
                 if compliance_rates[i] >= 0.70:
@@ -76,32 +80,75 @@ class MayorAgent(mesa.Agent):
         Directly implements LGU-funded levers across the 7 barangays.
         """
         import numpy as np
+
+        # Calculate Global Compliance EARLY so we can use it for Phase-Shift AND Political Healing
+        households = [a for a in self.model.schedule.agents if hasattr(a, 'is_compliant')]
+        compliant_count = sum(1 for h in households if h.is_compliant)
+        global_compliance = compliant_count / max(1, len(households))
+
+        # =================================================================
+        # 1. 'TARGET LOCK' HEURISTIC (THE SWAP)
+        # =================================================================
+        compliances = [b.get_local_compliance() for b in self.model.barangays]
+        lowest_idx = np.argmin(compliances)
         
-        # =================================================================
-        # NEW: THE SEQUENTIAL SATURATION FILTER (TASK FORCE LIMIT)
-        # =================================================================
-        # Calculate the total intended budget for each of the 7 barangays
+        # Calculate what the AI *intended* to give each barangay
         bgy_totals = [sum(action_vector[i*3:(i*3)+3]) for i in range(7)]
+        intended_max_idx = np.argmax(bgy_totals)
         
-        # Find the indices of the TOP 2 barangays the AI wants to target most
-        top_2_indices = np.argsort(bgy_totals)[-2:] 
-        
-        # Create a new blank vector and ONLY copy over the top 2
-        focused_action = np.zeros(21)
-        for idx in top_2_indices:
-            focused_action[idx*3] = action_vector[idx*3]       # IEC
-            focused_action[idx*3+1] = action_vector[idx*3+1]   # ENF
-            focused_action[idx*3+2] = action_vector[idx*3+2]   # INC
+        # If the AI aimed its biggest budget at the wrong barangay, redirect it!
+        if lowest_idx != intended_max_idx:
+            biggest_weapon = action_vector[intended_max_idx*3 : intended_max_idx*3+3].copy()
+            smaller_allocation = action_vector[lowest_idx*3 : lowest_idx*3+3].copy()
             
-        # Re-normalize so the chosen 2 barangays share 100% of the LGU budget
-        total_focused = np.sum(focused_action)
-        if total_focused > 0:
-            action_vector = focused_action / total_focused
+            # SWAP THEM (Modifying in-place)
+            action_vector[lowest_idx*3 : lowest_idx*3+3] = biggest_weapon
+            action_vector[intended_max_idx*3 : intended_max_idx*3+3] = smaller_allocation
+            
+        # Re-normalize just to be mathematically safe (USING [:] FOR IN-PLACE)
+        total_desire = np.sum(action_vector)
+        if total_desire > 0:
+            action_vector[:] = action_vector / total_desire
+
+        # =================================================================
+        # 2. THE DYNAMIC FINANCIAL GUARDRAIL (PHASE-SHIFT LOGIC)
+        # Ensures the worst barangay receives AT LEAST 50% ONLY IF in Crisis.
+        # =================================================================
+        target_levers = action_vector[lowest_idx*3 : lowest_idx*3+3].copy()
+        target_sum = np.sum(target_levers)
+        
+        # PHASE 1: CRISIS MODE (Force 50% Minimum)
+        if global_compliance < 0.70:
+            if target_sum < 0.50:
+                # Scale target up to exactly 50%
+                if target_sum > 0:
+                    action_vector[lowest_idx*3 : lowest_idx*3+3] = (target_levers / target_sum) * 0.50
+                else:
+                    action_vector[lowest_idx*3 : lowest_idx*3+3] = np.array([0.50/3, 0.50/3, 0.50/3])
+                    
+                # Scale the remaining 6 barangays down to share the remaining 50%
+                other_indices = [i for i in range(21) if i not in [lowest_idx*3, lowest_idx*3+1, lowest_idx*3+2]]
+                other_levers = action_vector[other_indices].copy()
+                other_sum = np.sum(other_levers)
+                
+                if other_sum > 0:
+                    action_vector[other_indices] = (other_levers / other_sum) * 0.50
+                else:
+                    action_vector[other_indices] = 0.50 / 18.0
+                    
+                # Re-normalize one final time to eliminate floating point errors (IN-PLACE)
+                action_vector[:] = action_vector / np.sum(action_vector)
+                
+        # PHASE 2: MAINTENANCE MODE (Guardrail Removed)
+        else:
+            # The AI is allowed to naturally spread the budget however it wants
+            # because the 70% threshold has been crossed!
+            pass 
         # =================================================================
 
         scale_factor = self.municipal_budget # Total LGU money to spend this quarter
         
-        # --- NEW: Initialize tracker for Political Recovery ---
+        # --- Initialize tracker for Political Recovery ---
         total_incentives_spent = 0.0 
         
         for i, bgy in enumerate(self.model.barangays):
@@ -120,12 +167,10 @@ class MayorAgent(mesa.Agent):
             self.deploy_municipal_inspectors(bgy, lgu_enf)
 
             # --- LEVER 2: UNIVERSAL INCENTIVES (LGU Reward Pool) ---
-            # Households can redeem this on top of their local barangay goods
             bgy.lgu_incentive_fund = lgu_inc
             total_incentives_spent += lgu_inc  # <--- TRACK IT HERE!
 
             # --- LEVER 3: UNIFIED IEC (Municipal Awareness) ---
-            # Direct boost to household attitude via LGU-led programs
             if lgu_iec > 0:
                 self.run_municipal_iec(bgy, lgu_iec)
 
@@ -136,18 +181,14 @@ class MayorAgent(mesa.Agent):
         # 1. Every 5,000 PHP spent on Incentives buys back 0.01 Political Capital
         ayuda_boost = (total_incentives_spent / 5000.0) * 0.01
         
-        # 2. Tiered "Clean City" Bonus (Breadcrumbs for the AI)
-        households = [a for a in self.model.schedule.agents if hasattr(a, 'is_compliant')]
-        compliant_count = sum(1 for h in households if h.is_compliant)
-        global_compliance = compliant_count / max(1, len(households))
-        
+        # 2. Tiered "Clean City" Bonus (Using the global_compliance from line 10)
         clean_city_boost = 0.0
-        if global_compliance >= 0.80:
-            clean_city_boost = 0.10   # Massive public pride
-        elif global_compliance >= 0.60:
-            clean_city_boost = 0.05   # Strong public approval
+        if global_compliance >= 0.85:
+            clean_city_boost = 0.20   # BUFFED: The Mayor is a hero, massive healing prevents late-game crash
+        elif global_compliance >= 0.70:
+            clean_city_boost = 0.10   
         elif global_compliance >= 0.40:
-            clean_city_boost = 0.02   # People are starting to notice the clean streets
+            clean_city_boost = 0.02   
         
         # 3. Apply the healing (Capped at 1.0 or 100% approval)
         self.model.political_capital = min(1.0, self.model.political_capital + ayuda_boost + clean_city_boost)

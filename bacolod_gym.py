@@ -30,13 +30,17 @@ class BacolodGymEnv(gym.Env):
         return self.model.get_state()
 
     def step(self, action):
-        # --- THE AGGRESSIVE 21-ACTION TRANSLATOR ---
-        positive_desires = (action + 1.0) / 2.0
+        # 1. APPLY THE SAME 5.0 TEMPERATURE AS THE MAYOR AGENT
+        amplified = np.exp(action * 10.0)
         
-        # CALIBRATION: Power of 4. 
-        # This mathematically forces "Sequential Saturation" while keeping all 21 choices legal.
-        amplified = np.power(positive_desires, 4) 
-        
+        # 2. APPLY THE SAME GRADUATION RULE (70%)
+        obs = self.model.get_state()
+        compliance_rates = obs[0:7]
+        for i in range(7):
+            if compliance_rates[i] >= 0.70:
+                amplified[i*3 : i*3+3] *= 0.01
+                
+        # 3. NORMALIZE
         total_desire = np.sum(amplified)
         if total_desire > 0:
             action_vector = amplified / total_desire
@@ -88,9 +92,8 @@ class BacolodGymEnv(gym.Env):
         global_compliance = np.mean(curr_compliance)
         reward = global_compliance * 50.0  
         
-        # 2. THE 90% SOCIAL NORM JACKPOT
-        # The AI gets a massive injection of points only if it crosses 90%
-        if global_compliance >= 0.90: 
+        # 2. THE 70% SOCIAL NORM JACKPOT (Aligned with Graduation Rule)
+        if global_compliance >= 0.70: 
             reward += 200.0                   
             
         compliance_gains = curr_compliance - prev_compliance
@@ -101,7 +104,8 @@ class BacolodGymEnv(gym.Env):
             enf_idx = start_idx + 1
             
             # 3. THE "SHOCK AND SUSTAIN" BREADCRUMBS
-            if curr_compliance[i] < 0.90:
+            # Aligned from 0.90 to 0.70
+            if curr_compliance[i] < 0.70:
                 # Hint: Use enforcement to break the initial resistance
                 reward += (allocation_vector[enf_idx] * 10.0) 
                 
@@ -110,7 +114,7 @@ class BacolodGymEnv(gym.Env):
                     jackpot = (bgy_allocation * compliance_gains[i]) * 100.0  
                     reward += jackpot
             else:
-                # Hint: Once past 90%, switch to IEC and Incentives to lock it in
+                # Hint: Once past 70%, switch to IEC and Incentives to lock it in
                 sustain_budget = allocation_vector[start_idx] + allocation_vector[start_idx + 2]
                 reward += (sustain_budget * 20.0) 
                 
@@ -119,8 +123,8 @@ class BacolodGymEnv(gym.Env):
                     reward -= (bgy_allocation * 10.0) 
         
         # 4. FOCUS ALLOCATION BONUS
-        # Give a small extra reward if the AI specifically targets the absolute worst barangay
-        struggling_indices = np.where(curr_compliance < 0.90)[0]
+        # Aligned from 0.90 to 0.70
+        struggling_indices = np.where(curr_compliance < 0.70)[0]
         if len(struggling_indices) > 0:
             lowest_bgy_idx = struggling_indices[np.argmin(curr_compliance[struggling_indices])]
             focus_allocation = np.sum(allocation_vector[lowest_bgy_idx*3:(lowest_bgy_idx*3)+3])
