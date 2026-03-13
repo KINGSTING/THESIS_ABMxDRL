@@ -35,18 +35,17 @@ def make_barangay_portrayal(barangay_target_id):
             portrayal["Layer"] = 1
             
             # --- VISUAL MULTI-LAYERED GOVERNANCE ---
-            # Distinguish between LGU Inspectors and Local Tanods
             if getattr(agent, "is_municipal", False):
-                portrayal["w"] = 0.9  # LGU Inspectors are larger
+                portrayal["w"] = 0.9  
                 portrayal["h"] = 0.9
-                portrayal["Color"] = "purple" # LGU Color
-                portrayal["text"] = "M"       # 'M' for Municipal
+                portrayal["Color"] = "purple" 
+                portrayal["text"] = "M"       
                 portrayal["text_color"] = "white"
             else:
-                portrayal["w"] = 0.7  # Tanods are standard size
+                portrayal["w"] = 0.7  
                 portrayal["h"] = 0.7
-                portrayal["Color"] = "blue"   # Local Color
-                portrayal["text"] = "T"       # 'T' for Tanod
+                portrayal["Color"] = "blue"   
+                portrayal["text"] = "T"       
                 portrayal["text_color"] = "white"
             
         elif agent_class == "BarangayAgent":
@@ -63,12 +62,10 @@ def make_barangay_portrayal(barangay_target_id):
 
 class Spacer(mesa.visualization.TextElement):
     def render(self, model):
-        # Keeps charts pushed down below the map
         return '<div style="height: 850px; width: 100%; display: block; z-index: -1;"></div>'
 
 class ViewSwitcher(mesa.visualization.TextElement):
     def render(self, model):
-        # This HTML block includes the "Image Hack" (onerror) to force the JS to run
         return """
         <div class="switcher-container">
             <div class="switcher-box">
@@ -122,20 +119,64 @@ class ViewSwitcher(mesa.visualization.TextElement):
                                 activeBtn.classList.add('active');
                             }
                         }
+
+                        // ==========================================================
+                        // 3. THE BULLETPROOF PADDING FIX
+                        // ==========================================================
+                        let canvases = document.getElementsByTagName('canvas');
+                        if(canvases.length > 0) {
+                            let chartCanvas = canvases[canvases.length - 1]; 
+                            let chartContainer = chartCanvas.parentElement;
+                            
+                            if(!document.getElementById('thesis-y-axis')) {
+                                // 1. Generate safe, physical whitespace around the graph
+                                chartContainer.style.position = 'relative';
+                                chartContainer.style.padding = '20px 70px 60px 120px'; // Top, Right, Bottom, Left
+                                chartContainer.style.boxSizing = 'content-box';
+                                chartContainer.style.width = '1000px'; 
+                                chartContainer.style.margin = '40px auto'; 
+                                
+                                // 2. Y-Axis Label (Nested perfectly in the left padding)
+                                let yLabel = document.createElement('div');
+                                yLabel.id = 'thesis-y-axis';
+                                yLabel.innerHTML = 'Compliance Rate (%)';
+                                yLabel.style.position = 'absolute';
+                                yLabel.style.left = '15px'; 
+                                yLabel.style.top = '84%';
+                                yLabel.style.transform = 'translateY(-50%) rotate(-90deg)';
+                                yLabel.style.fontWeight = 'bold';
+                                yLabel.style.fontSize = '18px';
+                                yLabel.style.fontFamily = 'Arial, sans-serif';
+                                yLabel.style.color = '#333';
+                                chartContainer.appendChild(yLabel);
+                                
+                                // 3. X-Axis Label (Nested perfectly in the bottom padding)
+                                let xLabel = document.createElement('div');
+                                xLabel.id = 'thesis-x-axis';
+                                xLabel.innerHTML = 'Ticks (Days)';
+                                xLabel.style.position = 'absolute';
+                                xLabel.style.bottom = '15px';
+                                xLabel.style.left = '50%';
+                                xLabel.style.transform = 'translateX(-50%)';
+                                xLabel.style.fontWeight = 'bold';
+                                xLabel.style.fontSize = '18px';
+                                xLabel.style.fontFamily = 'Arial, sans-serif';
+                                xLabel.style.color = '#333';
+                                chartContainer.appendChild(xLabel);
+                            }
+                        }
                     };
                     
-                    // Initialize view after short delay
                     setTimeout(() => window.switchView(0), 500);
                 }
             ">
 
             <style>
-                /* CENTERED MAP STYLE */
                 .world-grid-parent {
                     position: absolute !important;
                     top: 360px; 
-                    left: 60% !important;           /* Center horizontally */
-                    transform: translateX(-50%) !important; /* Perfect center alignment */
+                    left: 60% !important;           
+                    transform: translateX(-50%) !important; 
                     margin: 0 !important;
                     width: 600px !important; 
                     height: 600px !important;
@@ -144,7 +185,6 @@ class ViewSwitcher(mesa.visualization.TextElement):
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                     border-radius: 4px;
                 }
-
                 .switcher-container {
                     width: 100%; text-align: center; padding: 15px; 
                     background: white; z-index: 9999 !important; position: relative;
@@ -158,11 +198,7 @@ class ViewSwitcher(mesa.visualization.TextElement):
                     padding: 10px 20px; margin: 2px; border: 1px solid #aaa; 
                     cursor: pointer; border-radius: 4px; background: #f8f9fa; font-weight: bold;
                 }
-                .bgy-btn.active { 
-                    background-color: #007bff !important; 
-                    color: white !important; 
-                    border-color: #0056b3 !important; 
-                }
+                .bgy-btn.active { background-color: #007bff !important; color: white !important; border-color: #0056b3 !important; }
                 .bgy-btn:hover { background: #e2e6ea; }
             </style>
         </div>
@@ -190,9 +226,14 @@ barangay_chart_data = [
     {"Label": "Brgy Demologan",    "Color": "purple"}   
 ]
 
+# ==============================================================
+# 1:1 RESOLUTION LOCK (Graph perfectly matches the 1000px container)
+# ==============================================================
 chart_compliance = ChartModule(
     [{"Label": "Global Compliance", "Color": "Black"}] + barangay_chart_data,
-    data_collector_name='datacollector'
+    data_collector_name='datacollector',
+    canvas_width=1000, 
+    canvas_height=400 
 )
 visual_elements.append(chart_compliance)
 

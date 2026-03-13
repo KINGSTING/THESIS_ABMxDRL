@@ -182,14 +182,18 @@ class BacolodModel(mesa.Model):
         self.schedule.add(self.mayor)
         self.mayor.run_decision_logic() 
 
+        # ==============================================================
+        # UI GRAPH FIX: Multiply by 100 to convert decimals to percentages
+        # ==============================================================
         reporters = {
-            "Global Compliance": compute_global_compliance,
+            "Global Compliance": lambda m: compute_global_compliance(m) * 100.0,
             "Total Fines": lambda m: m.total_fines_collected,
             "Political Capital": lambda m: m.political_capital
         }
         
         for bgy in self.barangays:
-             reporters[bgy.name] = lambda m, b=bgy: b.get_local_compliance()
+             # Multiply individual barangay lines by 100 as well
+             reporters[bgy.name] = lambda m, b=bgy: b.get_local_compliance() * 100.0
 
         self.datacollector = DataCollector(model_reporters=reporters)
         self.datacollector.collect(self)
