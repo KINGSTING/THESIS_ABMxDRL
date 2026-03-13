@@ -222,7 +222,7 @@ class HouseholdAgent(mesa.Agent):
         # They do not lose capital for regular daily Barangay Tanod fines.
         # =================================================================
         if amount > 500:
-            political_penalty = 0.00015  # Heavier penalty, but only applies to Mayor's actions
+            political_penalty = 0.00010  # Heavier penalty, but only applies to Mayor's actions
             self.model.political_capital -= political_penalty
             self.model.political_capital = max(0.0, self.model.political_capital)
 

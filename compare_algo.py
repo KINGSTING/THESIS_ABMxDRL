@@ -18,12 +18,22 @@ def run_simulation(policy_mode, label, duration_quarters=12):
                 break # Actually stop the days if it crashed!
             model.step()
             
-        df = model.datacollector.get_model_vars_dataframe()
-        global_comp = df["Global Compliance"].iloc[-1]
+        # ==============================================================
+        # THE BULLETPROOF FIX: BYPASS MESA'S DATACOLLECTOR CACHE
+        # We manually count the live agents to guarantee 100% accurate graphs.
+        # ==============================================================
+        households = [a for a in model.schedule.agents if type(a).__name__ == "HouseholdAgent"]
+        if households:
+            compliant_count = sum(1 for h in households if h.is_compliant)
+            global_comp = compliant_count / len(households)
+        else:
+            global_comp = 0.0
+            
         history.append(global_comp)
+        # ==============================================================
         
         # IF COLLAPSE HAPPENS: Mark it, print it, and completely break the loop!
-        if model.political_capital < 0.10 or not model.running:
+        if model.political_capital < 0.10:
             print(f" > Quarter {q}: ⚠️ FATAL POLITICAL COLLAPSE! (Simulation Terminated)")
             collapse_quarter = q
             break 
@@ -69,7 +79,7 @@ def plot_comparison(results_dict):
     
     plt.xlabel("Quarter (90-day periods)", fontweight='bold')
     plt.ylabel("Global Compliance Rate", fontweight='bold')
-    plt.title("LGU Policy Performance: AI vs Traditional Models", fontsize=16, fontweight='bold')
+    plt.title("LGU Policy Performance: Static vs Mayor Agent", fontsize=16, fontweight='bold')
     
     # =================================================================
     # FIX: MOVED LEGEND OUTSIDE THE GRAPH (CENTER RIGHT)

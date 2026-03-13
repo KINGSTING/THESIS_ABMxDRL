@@ -332,18 +332,17 @@ class BacolodModel(mesa.Model):
         self.update_political_capital() 
         self.calculate_costs()
 
-        if not self.train_mode:
-            self.datacollector.collect(self)
-
         max_ticks = 3600 if self.train_mode else 1080
         
         if self.tick >= max_ticks: 
             self.running = False
             
-       # REMOVE OR COMMENT OUT THIS HALT CONDITION
-        # if self.political_capital < 0.10:
-        #     print("SIMULATION HALTED (Political Collapse).")
-        #     self.running = False
+        # FIX: RESTORED THIS HALT CONDITION!
+        # This prevents the "Zombie Mayor" from getting healed at the end of the quarter.
+        # If they act like a dictator and drop below 10%, the simulation halts IMMEDIATELY.
+        if self.political_capital <= 0.10 and not self.train_mode:
+             print("SIMULATION HALTED (Political Collapse).")
+             self.running = False
 
     def get_state(self):
         compliance_rates = [b.get_local_compliance() for b in self.barangays]
