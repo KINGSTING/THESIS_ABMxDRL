@@ -30,11 +30,26 @@ class BacolodModel(mesa.Model):
             super().__init__()
 
         self.train_mode = train_mode
-        self.policy_mode = policy_mode 
         self.rl_agent = None
         self.tick = 0       
         self.quarter = 1    
         self.behavior_override = behavior_override
+
+        # ==============================================================
+        # THE UI FIX: SANITIZE DROPDOWN STRINGS
+        # Translates human-readable UI text (e.g. "Pure Enforcement") 
+        # into the strict keys the MayorAgent expects.
+        # ==============================================================
+        raw_policy = str(policy_mode).strip().lower()
+        if "enforcement" in raw_policy:
+            self.policy_mode = "pure_enforcement"
+        elif "incentive" in raw_policy:
+            self.policy_mode = "pure_incentives"
+        elif "hudrl" in raw_policy or "mayor" in raw_policy:
+            self.policy_mode = "HuDRL"
+        else:
+            self.policy_mode = "status_quo"
+        # ==============================================================
 
         if self.behavior_override:
             print(f"\n[INIT] Calibration Mode Active. Overriding config.")
@@ -45,6 +60,7 @@ class BacolodModel(mesa.Model):
         # THREE SEPARATE CSV REPORTS (NOW WITH PERCENTAGES)
         # =================================================================
         results_dir = "results"
+        import os, csv # Ensure these are imported at the top of your file too!
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
 
@@ -313,6 +329,13 @@ class BacolodModel(mesa.Model):
     def step(self):
         self.tick += 1
         
+        # ==============================================================
+        # UI FIX 1: THE X-AXIS TIME TRACKER
+        # Mesa's visual graphs REQUIRE this to move the lines forward!
+        # ==============================================================
+        self.schedule.steps += 1
+        self.schedule.time += 1
+
         if self.tick % 90 == 0:
             self.quarter += 1
             for a in self.schedule.agents:
@@ -331,6 +354,13 @@ class BacolodModel(mesa.Model):
 
         self.update_political_capital() 
         self.calculate_costs()
+
+        # ==============================================================
+        # UI FIX 2: THE DATA COLLECTOR (You accidentally deleted this!)
+        # This MUST run every step so the graph can read the barangay compliance.
+        # ==============================================================
+        if not self.train_mode:
+            self.datacollector.collect(self)
 
         max_ticks = 3600 if self.train_mode else 1080
         
