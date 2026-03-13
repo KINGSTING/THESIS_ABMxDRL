@@ -3,24 +3,34 @@ import random
 import math
 from agents.household_agent import HouseholdAgent
 from agents.enforcement_agent import EnforcementAgent
+import barangay_config as config
 
 class BarangayAgent(mesa.Agent):
     def __init__(self, unique_id, model, local_budget=0):
         super().__init__(unique_id, model)
         
-        # --- 1. Identity & Demographics ---
-        self.name = ""
-        self.n_households = 1  
-        
+        # --- 1. Identity, Demographics & Config Extraction ---
+        try:
+            # Extract index from ID (e.g., "BGY_0" -> 0)
+            idx = int(str(unique_id).split('_')[1])
+            b_conf = config.BARANGAY_LIST[idx]
+            self.name = b_conf["name"]
+            self.n_households = b_conf["N_HOUSEHOLDS"]
+            
+            # Pull the exact allocation profile assigned to this barangay
+            profile_key = b_conf.get("allocation_profile", "Poblacion")
+            self.local_allocation_ratios = config.ALLOCATION_PROFILES.get(profile_key, {"enf": 0.33, "inc": 0.33, "iec": 0.34})
+        except:
+            self.name = ""
+            self.n_households = 1  
+            self.local_allocation_ratios = {"enf": 0.33, "inc": 0.33, "iec": 0.34}
+            
         # --- 2. State Metrics ---
         self.compliance_rate = 0.0
         self.total_households = 0
         self.compliant_count = 0
         
         # --- 3. Policy Variables (LOCAL TOTALS) ---
-        self.iec_fund = 0.0
-        self.enf_fund = 0.0
-        self.inc_fund = 0.0
         self.fine_amount = 500
         
         # LGU Intervention Buckets (Managed by MayorAgent)
@@ -37,8 +47,12 @@ class BarangayAgent(mesa.Agent):
         # --- 5. Financials ---
         self.local_annual_budget = local_budget
         self.local_quarterly_budget = local_budget / 4.0 
-        self.local_allocation_ratios = {"enf": 0.50, "inc": 0.30, "iec": 0.20}
         self.current_cash_on_hand = 0.0
+        
+        # Pre-calculate Quarter 1 funds so CSVs are immediately accurate
+        self.enf_fund = self.local_quarterly_budget * self.local_allocation_ratios.get("enf", 0.0)
+        self.inc_fund = self.local_quarterly_budget * self.local_allocation_ratios.get("inc", 0.0)
+        self.iec_fund = self.local_quarterly_budget * self.local_allocation_ratios.get("iec", 0.0)
 
         # Initialize local policy immediately on Day 0
         self.setup_local_policy()
@@ -81,8 +95,6 @@ class BarangayAgent(mesa.Agent):
 
     def local_iec_implementation(self):
         """Provides a small daily boost to local households representing localized IEC (Recorida/Purok)"""
-        # FIX: We now use the calculated 'iec_intensity' instead of the raw fund.
-        # We also use the high-speed dictionary so this doesn't slow down the DRL training.
         if self.iec_intensity > 0:
             impact = self.iec_intensity * 0.0005 # Small daily drip of awareness
             households = self.model.households_by_bgy.get(self.unique_id, [])

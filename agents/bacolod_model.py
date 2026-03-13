@@ -107,7 +107,7 @@ class BacolodModel(mesa.Model):
         
         # --- FIXED POLITICAL CAPITAL MATH ---
         self.political_capital = 1.0     
-        self.alpha_sensitivity = 0.0030 # High enough to cause collapse if strictly abused
+        self.alpha_sensitivity = 0.0010 # High enough to cause collapse if strictly abused
         self.beta_recovery = 0.0002      # Slow recovery if they ease up
 
         self.barangays = []
