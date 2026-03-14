@@ -86,66 +86,71 @@ class MayorAgent(mesa.Agent):
         compliant_count = sum(1 for h in households if h.is_compliant)
         global_compliance = compliant_count / max(1, len(households))
 
-        # =================================================================
-        # 1. 'TARGET LOCK' HEURISTIC (THE SWAP)
-        # =================================================================
-        compliances = [b.get_local_compliance() for b in self.model.barangays]
-        lowest_idx = np.argmin(compliances)
-        
-        # Calculate what the AI *intended* to give each barangay
-        bgy_totals = [sum(action_vector[i*3:(i*3)+3]) for i in range(7)]
-        intended_max_idx = np.argmax(bgy_totals)
-        
-        # If the AI aimed its biggest budget at the wrong barangay, redirect it!
-        if lowest_idx != intended_max_idx:
-            biggest_weapon = action_vector[intended_max_idx*3 : intended_max_idx*3+3].copy()
-            smaller_allocation = action_vector[lowest_idx*3 : lowest_idx*3+3].copy()
+        # --- ONLY APPLY HEURISTICS IF IN HuDRL MODE ---
+        if self.model.policy_mode == "HuDRL":
+            # =================================================================
+            # 1. 'TARGET LOCK' HEURISTIC (THE SWAP)
+            # =================================================================
+            compliances = [b.get_local_compliance() for b in self.model.barangays]
+            lowest_idx = np.argmin(compliances)
             
-            # SWAP THEM (Modifying in-place)
-            action_vector[lowest_idx*3 : lowest_idx*3+3] = biggest_weapon
-            action_vector[intended_max_idx*3 : intended_max_idx*3+3] = smaller_allocation
+            # Calculate what the AI *intended* to give each barangay
+            bgy_totals = [sum(action_vector[i*3:(i*3)+3]) for i in range(7)]
+            intended_max_idx = np.argmax(bgy_totals)
             
-        # Re-normalize just to be mathematically safe (USING [:] FOR IN-PLACE)
-        total_desire = np.sum(action_vector)
-        if total_desire > 0:
-            action_vector[:] = action_vector / total_desire
-
-        # =================================================================
-        # 2. THE DYNAMIC FINANCIAL GUARDRAIL (PHASE-SHIFT LOGIC)
-        # Ensures the worst barangay receives AT LEAST 50% ONLY IF in Crisis.
-        # =================================================================
-        target_levers = action_vector[lowest_idx*3 : lowest_idx*3+3].copy()
-        target_sum = np.sum(target_levers)
-        
-        # PHASE 1: CRISIS MODE (Force 50% Minimum)
-        if global_compliance < 0.70:
-            if target_sum < 0.50:
-                # Scale target up to exactly 50%
-                if target_sum > 0:
-                    action_vector[lowest_idx*3 : lowest_idx*3+3] = (target_levers / target_sum) * 0.50
-                else:
-                    action_vector[lowest_idx*3 : lowest_idx*3+3] = np.array([0.50/3, 0.50/3, 0.50/3])
-                    
-                # Scale the remaining 6 barangays down to share the remaining 50%
-                other_indices = [i for i in range(21) if i not in [lowest_idx*3, lowest_idx*3+1, lowest_idx*3+2]]
-                other_levers = action_vector[other_indices].copy()
-                other_sum = np.sum(other_levers)
+            # If the AI aimed its biggest budget at the wrong barangay, redirect it!
+            if lowest_idx != intended_max_idx:
+                biggest_weapon = action_vector[intended_max_idx*3 : intended_max_idx*3+3].copy()
+                smaller_allocation = action_vector[lowest_idx*3 : lowest_idx*3+3].copy()
                 
-                if other_sum > 0:
-                    action_vector[other_indices] = (other_levers / other_sum) * 0.50
-                else:
-                    action_vector[other_indices] = 0.50 / 18.0
-                    
-                # Re-normalize one final time to eliminate floating point errors (IN-PLACE)
-                action_vector[:] = action_vector / np.sum(action_vector)
+                # SWAP THEM (Modifying in-place)
+                action_vector[lowest_idx*3 : lowest_idx*3+3] = biggest_weapon
+                action_vector[intended_max_idx*3 : intended_max_idx*3+3] = smaller_allocation
                 
-        # PHASE 2: MAINTENANCE MODE (Guardrail Removed)
-        else:
-            # The AI is allowed to naturally spread the budget however it wants
-            # because the 70% threshold has been crossed!
-            pass 
+            # Re-normalize just to be mathematically safe (USING [:] FOR IN-PLACE)
+            total_desire = np.sum(action_vector)
+            if total_desire > 0:
+                action_vector[:] = action_vector / total_desire
+
+            # =================================================================
+            # 2. THE DYNAMIC FINANCIAL GUARDRAIL (PHASE-SHIFT LOGIC)
+            # Ensures the worst barangay receives AT LEAST 50% ONLY IF in Crisis.
+            # =================================================================
+            target_levers = action_vector[lowest_idx*3 : lowest_idx*3+3].copy()
+            target_sum = np.sum(target_levers)
+            
+            # PHASE 1: CRISIS MODE (Force 50% Minimum)
+            if global_compliance < 0.70:
+                if target_sum < 0.50:
+                    # Scale target up to exactly 50%
+                    if target_sum > 0:
+                        action_vector[lowest_idx*3 : lowest_idx*3+3] = (target_levers / target_sum) * 0.50
+                    else:
+                        action_vector[lowest_idx*3 : lowest_idx*3+3] = np.array([0.50/3, 0.50/3, 0.50/3])
+                        
+                    # Scale the remaining 6 barangays down to share the remaining 50%
+                    other_indices = [i for i in range(21) if i not in [lowest_idx*3, lowest_idx*3+1, lowest_idx*3+2]]
+                    other_levers = action_vector[other_indices].copy()
+                    other_sum = np.sum(other_levers)
+                    
+                    if other_sum > 0:
+                        action_vector[other_indices] = (other_levers / other_sum) * 0.50
+                    else:
+                        action_vector[other_indices] = 0.50 / 18.0
+                        
+                    # Re-normalize one final time to eliminate floating point errors (IN-PLACE)
+                    action_vector[:] = action_vector / np.sum(action_vector)
+                    
+            # PHASE 2: MAINTENANCE MODE (Guardrail Removed)
+            else:
+                # The AI is allowed to naturally spread the budget however it wants
+                # because the 70% threshold has been crossed!
+                pass 
         # =================================================================
 
+        # =====================================================================
+        # CORE EXECUTION: THIS NOW RUNS FOR BOTH Vanilla PPO AND HuDRL
+        # =====================================================================
         scale_factor = self.municipal_budget # Total LGU money to spend this quarter
         
         # --- Initialize tracker for Political Recovery ---
@@ -192,7 +197,7 @@ class MayorAgent(mesa.Agent):
         
         # 3. Apply the healing (Capped at 1.0 or 100% approval)
         self.model.political_capital = min(1.0, self.model.political_capital + ayuda_boost + clean_city_boost)
-
+        
     def deploy_municipal_inspectors(self, bgy, fund):
         import random # Ensure this is at the top of your file if not already there
 

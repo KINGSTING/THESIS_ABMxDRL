@@ -7,8 +7,9 @@ from agents.enforcement_agent import EnforcementAgent
 class BacolodGymEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, policy_mode="HuDRL"):
         super(BacolodGymEnv, self).__init__()
+        self.policy_mode = policy_mode
         # LEGAL: Maintaining the full 21 Municipal Levers
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(21,), dtype=np.float32)
         self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(17,), dtype=np.float32)
@@ -17,6 +18,8 @@ class BacolodGymEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        # PASS THE DYNAMIC POLICY MODE HERE
+        self.model = BacolodModel(train_mode=True, policy_mode=self.policy_mode)
         self.model = BacolodModel(train_mode=True, policy_mode="HuDRL")
         obs = self.model.get_state()
         
